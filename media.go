@@ -1,6 +1,10 @@
 package opencaravan
 
-import "time"
+import (
+	"errors"
+	"strings"
+	"time"
+)
 
 // MediaType describes the kind of participant-shared media attached to a
 // journey or segment.
@@ -18,6 +22,41 @@ const (
 	// MediaFile means the shared media is a generic file.
 	MediaFile MediaType = "file"
 )
+
+// ImageResourceRef identifies an OpenCaravan image resource accepted by a
+// server.
+//
+// The ID is enough for clients to derive the server's image fetch route. Digest
+// gives clients a stable cache and integrity key without carrying generated
+// URLs in profile, vehicle, or journey payloads.
+type ImageResourceRef struct {
+	ID           UUID   `json:"id"`
+	Digest       string `json:"digest"`
+	ContentType  string `json:"content_type"`
+	WidthPixels  int    `json:"width_pixels,omitempty"`
+	HeightPixels int    `json:"height_pixels,omitempty"`
+}
+
+// Validate reports whether ref contains a valid image identity and metadata.
+func (ref ImageResourceRef) Validate() error {
+	if !ref.ID.Valid() {
+		return errors.New("image resource id must be a valid UUID")
+	}
+	if ref.Digest == "" {
+		return errors.New("digest must be set")
+	}
+	contentType := strings.ToLower(ref.ContentType)
+	if !strings.HasPrefix(contentType, "image/") || len(contentType) == len("image/") {
+		return errors.New("content_type must be an image media type")
+	}
+	if ref.WidthPixels < 0 {
+		return errors.New("width_pixels must not be negative")
+	}
+	if ref.HeightPixels < 0 {
+		return errors.New("height_pixels must not be negative")
+	}
+	return nil
+}
 
 // SharedMedia describes media that a participant contributed to a journey.
 //

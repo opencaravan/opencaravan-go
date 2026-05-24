@@ -17,6 +17,9 @@ const (
 	testMembershipID     UUID = "77777777-7777-4777-8777-777777777777"
 	testInviteID         UUID = "88888888-8888-4888-8888-888888888888"
 	testMediaID          UUID = "99999999-9999-4999-8999-999999999999"
+	testAvatarImageID    UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	testBannerImageID    UUID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	testVehicleAvatarID  UUID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
 	testUserInactivityDeletionDays int64 = 90
 )
@@ -160,6 +163,9 @@ func TestUserJSONAndValidate(t *testing.T) {
 	if decoded.Profile.DisplayName != "Riley" {
 		t.Fatalf("DisplayName = %q, want Riley", decoded.Profile.DisplayName)
 	}
+	if decoded.Profile.AvatarImage == nil || decoded.Profile.AvatarImage.ID != testAvatarImageID {
+		t.Fatalf("AvatarImage = %#v, want ID %q", decoded.Profile.AvatarImage, testAvatarImageID)
+	}
 	if got := decoded.Profile.Contacts[0].URI; got != "sms:+15035551212" {
 		t.Fatalf("contact URI = %q, want sms:+15035551212", got)
 	}
@@ -169,8 +175,6 @@ func TestUserJSONAndValidate(t *testing.T) {
 }
 
 func TestUserValidateRejectsInvalidFields(t *testing.T) {
-	valid := validUser()
-
 	tests := []struct {
 		name   string
 		mutate func(*User)
@@ -183,7 +187,8 @@ func TestUserValidateRejectsInvalidFields(t *testing.T) {
 			u.DeletionAfterInactivityDays = ptr[int64](-1)
 		}},
 		{name: "missing display name", mutate: func(u *User) { u.Profile.DisplayName = "" }},
-		{name: "invalid avatar url", mutate: func(u *User) { u.Profile.AvatarURL = "not-a-url" }},
+		{name: "invalid avatar image", mutate: func(u *User) { u.Profile.AvatarImage.ID = "" }},
+		{name: "invalid banner image", mutate: func(u *User) { u.Profile.BannerImage.ContentType = "text/plain" }},
 		{name: "invalid accent color", mutate: func(u *User) { u.Profile.AccentColor = "blue" }},
 		{name: "invalid profile link", mutate: func(u *User) { u.Profile.Links[0].URL = "/relative" }},
 		{name: "invalid contact kind", mutate: func(u *User) {
@@ -195,12 +200,66 @@ func TestUserValidateRejectsInvalidFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			user := valid
-			user.Profile.Links = append([]UserProfileLink(nil), valid.Profile.Links...)
-			user.Profile.Contacts = append([]UserProfileContact(nil), valid.Profile.Contacts...)
-			user.ClientApps = append([]ClientApp(nil), valid.ClientApps...)
+			user := validUser()
 			tt.mutate(&user)
 			if err := user.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestImageResourceRefValidate(t *testing.T) {
+	valid := validAvatarImageRef()
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ImageResourceRef)
+	}{
+		{name: "missing id", mutate: func(ref *ImageResourceRef) { ref.ID = "" }},
+		{name: "missing digest", mutate: func(ref *ImageResourceRef) { ref.Digest = "" }},
+		{name: "not image content type", mutate: func(ref *ImageResourceRef) { ref.ContentType = "application/octet-stream" }},
+		{name: "negative width", mutate: func(ref *ImageResourceRef) { ref.WidthPixels = -1 }},
+		{name: "negative height", mutate: func(ref *ImageResourceRef) { ref.HeightPixels = -1 }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ref := valid
+			tt.mutate(&ref)
+			if err := ref.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestVehicleValidate(t *testing.T) {
+	valid := validVehicle()
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Vehicle)
+	}{
+		{name: "missing vehicle id", mutate: func(vehicle *Vehicle) { vehicle.ID = "" }},
+		{name: "missing display name", mutate: func(vehicle *Vehicle) { vehicle.DisplayName = "" }},
+		{name: "invalid avatar image", mutate: func(vehicle *Vehicle) { vehicle.AvatarImage.Digest = "" }},
+		{name: "invalid banner image", mutate: func(vehicle *Vehicle) { vehicle.BannerImage.ContentType = "application/json" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vehicle := validVehicle()
+			tt.mutate(&vehicle)
+			if err := vehicle.Validate(); err == nil {
 				t.Fatal("Validate() error = nil, want error")
 			}
 		})
@@ -530,8 +589,8 @@ func validUser() User {
 		ID: testUserID,
 		Profile: UserProfile{
 			DisplayName: "Riley",
-			AvatarURL:   "https://public.spivot.net/users/riley/avatar.png",
-			BannerURL:   "https://public.spivot.net/users/riley/banner.png",
+			AvatarImage: ptr(validAvatarImageRef()),
+			BannerImage: ptr(validBannerImageRef()),
 			Bio:         "Usually somewhere near the back of the convoy.",
 			AccentColor: "#3366cc",
 			Links: []UserProfileLink{
@@ -561,6 +620,49 @@ func validUser() User {
 				Platform: "ios",
 			},
 		},
+	}
+}
+
+func validVehicle() Vehicle {
+	return Vehicle{
+		ID:          testVehicleID,
+		DisplayName: "Blue Bronco",
+		Make:        "Ford",
+		Model:       "Bronco",
+		ModelYear:   2026,
+		Color:       "blue",
+		AvatarImage: ptr(validVehicleAvatarImageRef()),
+		BannerImage: ptr(validBannerImageRef()),
+	}
+}
+
+func validAvatarImageRef() ImageResourceRef {
+	return ImageResourceRef{
+		ID:           testAvatarImageID,
+		Digest:       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ContentType:  "image/png",
+		WidthPixels:  512,
+		HeightPixels: 512,
+	}
+}
+
+func validVehicleAvatarImageRef() ImageResourceRef {
+	return ImageResourceRef{
+		ID:           testVehicleAvatarID,
+		Digest:       "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		ContentType:  "image/png",
+		WidthPixels:  512,
+		HeightPixels: 512,
+	}
+}
+
+func validBannerImageRef() ImageResourceRef {
+	return ImageResourceRef{
+		ID:           testBannerImageID,
+		Digest:       "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		ContentType:  "image/jpeg",
+		WidthPixels:  1200,
+		HeightPixels: 400,
 	}
 }
 

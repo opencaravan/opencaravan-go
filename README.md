@@ -45,11 +45,25 @@ func main() {
 	creationTime := time.Now()
 	deletionTime := creationTime.Add(7 * 24 * time.Hour)
 	deletionAfterInactivityDays := int64(90)
+	userAvatarImage := &opencaravan.ImageResourceRef{
+		ID:           serverAssignedID(),
+		Digest:       "sha256:...",
+		ContentType:  "image/png",
+		WidthPixels:  512,
+		HeightPixels: 512,
+	}
+	vehicleAvatarImage := &opencaravan.ImageResourceRef{
+		ID:           serverAssignedID(),
+		Digest:       "sha256:...",
+		ContentType:  "image/png",
+		WidthPixels:  512,
+		HeightPixels: 512,
+	}
 	user := opencaravan.User{
 		ID: serverAssignedID(),
 		Profile: opencaravan.UserProfile{
 			DisplayName: "Riley",
-			AvatarURL:   "https://public.spivot.net/users/riley/avatar.png",
+			AvatarImage: userAvatarImage,
 			AccentColor: "#3366cc",
 			Contacts: []opencaravan.UserProfileContact{
 				{
@@ -61,6 +75,11 @@ func main() {
 			},
 		},
 		DeletionAfterInactivityDays: &deletionAfterInactivityDays,
+	}
+	vehicle := opencaravan.Vehicle{
+		ID:          serverAssignedID(),
+		DisplayName: "Blue Bronco",
+		AvatarImage: vehicleAvatarImage,
 	}
 	journey := opencaravan.Journey{
 		ID:              serverAssignedID(),
@@ -87,6 +106,9 @@ func main() {
 	}
 
 	if err := user.Validate(); err != nil {
+		panic(err)
+	}
+	if err := vehicle.Validate(); err != nil {
 		panic(err)
 	}
 
@@ -157,6 +179,12 @@ server republishes its current view of that profile to authorized journey
 participants. Clients may mirror one profile across servers or tailor profile
 details for each server.
 
+`ImageResourceRef` is the reusable in-protocol handle for server-accepted image
+resources. User profiles and vehicles can both expose `AvatarImage` for compact
+or map representations and `BannerImage` for wider presentation surfaces. The
+reference does not carry a URL; clients derive the server fetch path from the
+resource ID and use the digest as a cache and integrity key.
+
 `User.DeletionAfterInactivityDays` is optional. When set, it declares the number
 of inactive days after which a server may delete the user record if no
 server-defined activity resets the timer. The day-level unit avoids promising
@@ -182,6 +210,7 @@ The package currently includes draft types for:
 - per-journey deletion timestamps and feature flags
 - private invite-only journeys, users, journey participants, client apps,
   segments, and vehicles
+- in-protocol image resource references for user and vehicle presentation
 - portable journey invites with single-use and multi-use token semantics,
   integrity metadata, and web/app link forms
 - participant-shared journey media

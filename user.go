@@ -27,9 +27,13 @@ type User struct {
 // Clients may mirror one profile across servers or tailor profile details for
 // each server registration.
 type UserProfile struct {
-	DisplayName string               `json:"display_name"`
-	AvatarURL   string               `json:"avatar_url,omitempty"`
-	BannerURL   string               `json:"banner_url,omitempty"`
+	DisplayName string `json:"display_name"`
+	// AvatarImage is the image clients can use for compact or map
+	// representations of this user.
+	AvatarImage *ImageResourceRef `json:"avatar_image,omitempty"`
+	// BannerImage is an optional wide image clients can use in richer profile
+	// views.
+	BannerImage *ImageResourceRef    `json:"banner_image,omitempty"`
 	Bio         string               `json:"bio,omitempty"`
 	AccentColor string               `json:"accent_color,omitempty"`
 	Links       []UserProfileLink    `json:"links,omitempty"`
@@ -111,11 +115,15 @@ func (profile UserProfile) Validate() error {
 	if profile.DisplayName == "" {
 		return errors.New("display_name must be set")
 	}
-	if profile.AvatarURL != "" && !validAbsoluteURL(profile.AvatarURL) {
-		return errors.New("avatar_url must be an absolute URL")
+	if profile.AvatarImage != nil {
+		if err := profile.AvatarImage.Validate(); err != nil {
+			return fmt.Errorf("avatar_image: %w", err)
+		}
 	}
-	if profile.BannerURL != "" && !validAbsoluteURL(profile.BannerURL) {
-		return errors.New("banner_url must be an absolute URL")
+	if profile.BannerImage != nil {
+		if err := profile.BannerImage.Validate(); err != nil {
+			return fmt.Errorf("banner_image: %w", err)
+		}
 	}
 	if profile.AccentColor != "" && !validHexColor(profile.AccentColor) {
 		return errors.New("accent_color must be #RRGGBB")

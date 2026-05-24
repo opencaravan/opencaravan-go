@@ -109,6 +109,12 @@ type Vehicle struct {
 	Model       string `json:"model,omitempty"`
 	ModelYear   int    `json:"model_year,omitempty"`
 	Color       string `json:"color,omitempty"`
+	// AvatarImage is the image clients can use for compact or map
+	// representations of this vehicle.
+	AvatarImage *ImageResourceRef `json:"avatar_image,omitempty"`
+	// BannerImage is an optional wide image clients can use in richer vehicle
+	// views.
+	BannerImage *ImageResourceRef `json:"banner_image,omitempty"`
 }
 
 // SegmentState describes whether a journey segment is receiving or retaining
@@ -282,6 +288,28 @@ func (app ClientApp) Validate() error {
 	}
 	if app.Name == "" {
 		return errors.New("name must be set")
+	}
+	return nil
+}
+
+// Validate reports whether vehicle contains required identity and valid
+// optional image resources.
+func (vehicle Vehicle) Validate() error {
+	if !vehicle.ID.Valid() {
+		return errors.New("vehicle id must be a valid UUID")
+	}
+	if vehicle.DisplayName == "" {
+		return errors.New("display_name must be set")
+	}
+	if vehicle.AvatarImage != nil {
+		if err := vehicle.AvatarImage.Validate(); err != nil {
+			return fmt.Errorf("avatar_image: %w", err)
+		}
+	}
+	if vehicle.BannerImage != nil {
+		if err := vehicle.BannerImage.Validate(); err != nil {
+			return fmt.Errorf("banner_image: %w", err)
+		}
 	}
 	return nil
 }
