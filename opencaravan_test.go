@@ -735,6 +735,7 @@ func TestSegmentVehicleValidate(t *testing.T) {
 		{name: "unknown occupant role", mutate: func(v *SegmentVehicle) { v.Occupants[0].Role = OccupantRole("pilot") }},
 		{name: "tracklog from non occupant", mutate: func(v *SegmentVehicle) { v.Tracklog[0].JourneyParticipantID = testVehicleID }},
 		{name: "tracklog for other segment vehicle", mutate: func(v *SegmentVehicle) { v.Tracklog[0].SegmentVehicleID = testVehicleID }},
+		{name: "tracklog for other segment", mutate: func(v *SegmentVehicle) { v.Tracklog[0].SegmentID = testVehicleID }},
 	}
 
 	for _, tt := range tests {

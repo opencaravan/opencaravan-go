@@ -119,6 +119,9 @@ func (vehicle SegmentVehicle) Validate() error {
 		if sample.SegmentVehicleID != vehicle.ID {
 			return fmt.Errorf("tracklog sample %d: segment_vehicle_id does not match vehicle", i)
 		}
+		if sample.SegmentID != vehicle.SegmentID {
+			return fmt.Errorf("tracklog sample %d: segment_id does not match segment_vehicle", i)
+		}
 		if _, ok := participants[sample.JourneyParticipantID]; !ok {
 			return fmt.Errorf("tracklog sample %d: journey_participant_id is not an occupant", i)
 		}
