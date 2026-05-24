@@ -201,8 +201,8 @@ func (journey Journey) Validate() error {
 		}
 	}
 	for i, segment := range journey.Segments {
-		if !segment.ID.Valid() {
-			return fmt.Errorf("segments[%d]: id must be a valid UUID", i)
+		if err := segment.Validate(); err != nil {
+			return fmt.Errorf("segments[%d]: %w", i, err)
 		}
 		if segment.JourneyID != journey.ID {
 			return fmt.Errorf("segments[%d]: journey_id does not match journey", i)
@@ -217,6 +217,42 @@ func (journey Journey) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+// Validate reports whether segment has the required identity, state,
+// timestamps, and nested segment vehicles. Each nested SegmentVehicle must
+// also reference this segment's ID so a vehicle from another segment cannot
+// silently attach.
+func (segment JourneySegment) Validate() error {
+	if !segment.ID.Valid() {
+		return errors.New("id must be a valid UUID")
+	}
+	if !segment.JourneyID.Valid() {
+		return errors.New("journey_id must be a valid UUID")
+	}
+	if !segment.State.Valid() {
+		return errors.New("state must be a known OpenCaravan value")
+	}
+	if segment.StartTime.IsZero() {
+		return errors.New("start_time must be set")
+	}
+	if segment.EndTime != nil {
+		if segment.EndTime.IsZero() {
+			return errors.New("end_time must be a non-zero time")
+		}
+		if segment.EndTime.Before(segment.StartTime) {
+			return errors.New("end_time must not be before start_time")
+		}
+	}
+	for i, sv := range segment.Vehicles {
+		if err := sv.Validate(); err != nil {
+			return fmt.Errorf("vehicles[%d]: %w", i, err)
+		}
+		if sv.SegmentID != segment.ID {
+			return fmt.Errorf("vehicles[%d]: segment_id does not match segment", i)
+		}
+	}
 	return nil
 }
 

@@ -704,6 +704,64 @@ func TestPositionSampleValidate(t *testing.T) {
 	}
 }
 
+func TestJourneySegmentValidate(t *testing.T) {
+	startTime := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	endTime := startTime.Add(2 * time.Hour)
+	valid := JourneySegment{
+		ID:        testSegmentID,
+		JourneyID: testJourneyID,
+		State:     SegmentActive,
+		StartTime: startTime,
+		EndTime:   &endTime,
+		Vehicles: []SegmentVehicle{
+			{
+				ID:        testSegmentVehicleID,
+				SegmentID: testSegmentID,
+				VehicleID: testVehicleID,
+				Occupants: []VehicleOccupant{
+					{
+						JourneyParticipantID: testMembershipID,
+						ClientAppIDs:         []UUID{testClientAppID},
+						Role:                 OccupantDriver,
+						JoinTime:             startTime,
+					},
+				},
+			},
+		},
+	}
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*JourneySegment)
+	}{
+		{name: "missing segment id", mutate: func(s *JourneySegment) { s.ID = "" }},
+		{name: "missing journey id", mutate: func(s *JourneySegment) { s.JourneyID = "" }},
+		{name: "unknown state", mutate: func(s *JourneySegment) { s.State = SegmentState("unknown") }},
+		{name: "missing start time", mutate: func(s *JourneySegment) { s.StartTime = time.Time{} }},
+		{name: "zero end time", mutate: func(s *JourneySegment) { s.EndTime = ptr(time.Time{}) }},
+		{name: "end before start", mutate: func(s *JourneySegment) {
+			before := s.StartTime.Add(-time.Minute)
+			s.EndTime = &before
+		}},
+		{name: "vehicle for other segment", mutate: func(s *JourneySegment) { s.Vehicles[0].SegmentID = testVehicleID }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			segment := valid
+			segment.Vehicles = append([]SegmentVehicle(nil), valid.Vehicles...)
+			tt.mutate(&segment)
+			if err := segment.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
 func TestSegmentVehicleValidate(t *testing.T) {
 	valid := SegmentVehicle{
 		ID:        testSegmentVehicleID,
