@@ -17,6 +17,8 @@ const (
 	testMembershipID     UUID = "77777777-7777-4777-8777-777777777777"
 	testInviteID         UUID = "88888888-8888-4888-8888-888888888888"
 	testMediaID          UUID = "99999999-9999-4999-8999-999999999999"
+
+	testUserInactivityDeletionSeconds int64 = 90 * 24 * 60 * 60
 )
 
 func TestUUIDMarshalTextRequiresCanonicalID(t *testing.T) {
@@ -161,6 +163,9 @@ func TestUserJSONAndValidate(t *testing.T) {
 	if got := decoded.Profile.Contacts[0].URI; got != "sms:+15035551212" {
 		t.Fatalf("contact URI = %q, want sms:+15035551212", got)
 	}
+	if decoded.DeletionAfterInactivitySeconds == nil || *decoded.DeletionAfterInactivitySeconds != testUserInactivityDeletionSeconds {
+		t.Fatalf("DeletionAfterInactivitySeconds = %v, want %d", decoded.DeletionAfterInactivitySeconds, testUserInactivityDeletionSeconds)
+	}
 }
 
 func TestUserValidateRejectsInvalidFields(t *testing.T) {
@@ -171,6 +176,12 @@ func TestUserValidateRejectsInvalidFields(t *testing.T) {
 		mutate func(*User)
 	}{
 		{name: "missing user id", mutate: func(u *User) { u.ID = "" }},
+		{name: "zero inactivity deletion duration", mutate: func(u *User) {
+			u.DeletionAfterInactivitySeconds = ptr[int64](0)
+		}},
+		{name: "negative inactivity deletion duration", mutate: func(u *User) {
+			u.DeletionAfterInactivitySeconds = ptr[int64](-1)
+		}},
 		{name: "missing display name", mutate: func(u *User) { u.Profile.DisplayName = "" }},
 		{name: "invalid avatar url", mutate: func(u *User) { u.Profile.AvatarURL = "not-a-url" }},
 		{name: "invalid accent color", mutate: func(u *User) { u.Profile.AccentColor = "blue" }},
@@ -540,6 +551,7 @@ func validUser() User {
 				},
 			},
 		},
+		DeletionAfterInactivitySeconds: ptr(testUserInactivityDeletionSeconds),
 		ClientApps: []ClientApp{
 			{
 				ID:       testClientAppID,
