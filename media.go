@@ -22,8 +22,8 @@ const (
 // SharedMedia describes media that a participant contributed to a journey.
 //
 // SegmentID is optional because some media belongs to the whole journey rather
-// than one bounded segment. PolicyHash records the policy snapshot that governed
-// sharing when the media was accepted by the server.
+// than one bounded segment. PolicyHash records the server policy document
+// fingerprint that governed sharing when the media was accepted by the server.
 type SharedMedia struct {
 	ID            UUID       `json:"id"`
 	JourneyID     UUID       `json:"journey_id"`

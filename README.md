@@ -42,9 +42,19 @@ import (
 )
 
 func main() {
+	createdAt := time.Now()
+	deleteAt := createdAt.Add(7 * 24 * time.Hour)
 	journey := opencaravan.Journey{
-		ID:    serverAssignedID(),
-		Title: "Sunday Ridge Drive",
+		ID:              serverAssignedID(),
+		OriginServerURL: "https://public.spivot.net",
+		Title:           "Sunday Ridge Drive",
+		State:           opencaravan.JourneyPlanned,
+		DeleteAt:        &deleteAt,
+		Features: opencaravan.JourneyFeatures{
+			ExportAllowed: true,
+			MediaAllowed:  true,
+		},
+		CreatedAt:       createdAt,
 	}
 
 	coordinator := opencaravan.JourneyParticipant{
@@ -54,7 +64,7 @@ func main() {
 		Privileges: opencaravan.JourneyParticipantPrivileges{
 			CanGenerateInvites: true,
 		},
-		JoinedAt: time.Now(),
+		JoinedAt: createdAt,
 	}
 
 	token, err := opencaravan.NewJourneyInviteToken(
@@ -74,7 +84,7 @@ func main() {
 	invite.ID = serverAssignedID()
 	invite.Audience = opencaravan.JourneyInviteGroupAudience
 	invite.CreatedByJourneyParticipantID = coordinator.ID
-	invite.CreatedAt = time.Now()
+	invite.CreatedAt = createdAt
 	invite.PolicyHash = "sha256:..."
 	invite.DisplayName = journey.Title
 	invite.Links = &opencaravan.JourneyInviteLinks{
@@ -112,11 +122,10 @@ implementation test, or conformance fixture. Use `ParseUUID` when accepting a
 UUID from text, configuration, a command-line flag, or another non-JSON boundary.
 The normal client/server wire path is JSON marshaling and unmarshaling.
 
-Servers advertise the journey lifecycle policies they allow through
-`ServerPolicy.JourneyPolicies`. A client selects one of those profiles when
-creating a journey, and the created journey carries a `JourneyPolicy` snapshot
-with concrete `ActiveExpiresAt`, `DownloadUntil`, `PurgeAt`, or `RetainForever`
-semantics resolved by the server.
+`Journey.DeleteAt` is the immutable scheduled hard-deletion timestamp. A nil
+value means the server has not scheduled the journey for deletion. Journey-level
+feature flags such as `ExportAllowed` and `MediaAllowed` describe capabilities
+that clients can render directly.
 
 For a one-person private-message invite, use `JourneyInviteSingleUse` and
 `JourneyInviteIndividualAudience`. For a link posted to a group chat or web
@@ -129,8 +138,8 @@ OpenCaravan client app.
 
 The package currently includes draft types for:
 
-- server policy and journey lifecycle profile advertisements
-- per-journey lifecycle policy snapshots
+- server policy advertisements
+- per-journey deletion timestamps and feature flags
 - private invite-only journeys, segments, human participants, client apps, and
   vehicles
 - portable journey invites with single-use and multi-use token semantics,

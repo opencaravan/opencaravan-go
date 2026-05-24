@@ -167,7 +167,7 @@ func NewJourneyInvite(serverURL string, journeyID UUID, token JourneyInviteToken
 }
 
 // Validate reports whether invite contains the required identity, capability,
-// issuer, policy, and integrity fields.
+// issuer, policy fingerprint, and integrity fields.
 func (invite JourneyInvite) Validate() error {
 	if invite.Type != JourneyInviteType {
 		return fmt.Errorf("type must be %q", JourneyInviteType)

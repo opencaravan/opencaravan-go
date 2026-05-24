@@ -38,17 +38,18 @@ func (s JourneyState) Valid() bool {
 //
 // Journey is the aggregate representation. APIs may return participants,
 // segments, and media inline for small journeys, or page those collections
-// separately for large retained journeys. Its Policy field is the concrete
-// lifecycle policy snapshot selected from the origin server's advertised policy
-// profiles. New participants join through server-issued invite tokens, and
-// invite creation is governed by each attached participant's privileges.
+// separately for large retained journeys. DeleteAt is an immutable scheduled
+// hard-deletion timestamp; nil means no scheduled deletion. New participants
+// join through server-issued invite tokens, and invite creation is governed by
+// each attached participant's privileges.
 type Journey struct {
 	ID              UUID                 `json:"id"`
 	OriginServerURL string               `json:"origin_server_url"`
 	Title           string               `json:"title"`
 	Description     string               `json:"description,omitempty"`
 	State           JourneyState         `json:"state"`
-	Policy          JourneyPolicy        `json:"policy"`
+	DeleteAt        *time.Time           `json:"delete_at,omitempty"`
+	Features        JourneyFeatures      `json:"features"`
 	Participants    []JourneyParticipant `json:"participants,omitempty"`
 	Segments        []JourneySegment     `json:"segments,omitempty"`
 	SharedMedia     []SharedMedia        `json:"shared_media,omitempty"`
@@ -56,6 +57,12 @@ type Journey struct {
 	StartsAt        *time.Time           `json:"starts_at,omitempty"`
 	StartedAt       *time.Time           `json:"started_at,omitempty"`
 	ClosedAt        *time.Time           `json:"closed_at,omitempty"`
+}
+
+// JourneyFeatures describes optional capabilities enabled for a journey.
+type JourneyFeatures struct {
+	ExportAllowed bool `json:"export_allowed"`
+	MediaAllowed  bool `json:"media_allowed"`
 }
 
 // JourneyParticipant describes a human participant attached to one journey.
@@ -191,8 +198,8 @@ type VehicleOccupant struct {
 	LeftAt        *time.Time   `json:"left_at,omitempty"`
 }
 
-// Validate reports whether journey contains the required identity, lifecycle
-// policy, timestamps, and aggregate relationships.
+// Validate reports whether journey contains the required identity, immutable
+// deletion timestamp, timestamps, and aggregate relationships.
 func (journey Journey) Validate() error {
 	if !journey.ID.Valid() {
 		return errors.New("journey id must be a valid UUID")
@@ -206,11 +213,14 @@ func (journey Journey) Validate() error {
 	if !journey.State.Valid() {
 		return errors.New("state must be a known OpenCaravan value")
 	}
-	if err := journey.Policy.Validate(); err != nil {
-		return fmt.Errorf("policy: %w", err)
+	if journey.DeleteAt != nil && journey.DeleteAt.IsZero() {
+		return errors.New("delete_at must be a non-zero time")
 	}
 	if journey.CreatedAt.IsZero() {
 		return errors.New("created_at must be set")
+	}
+	if journey.DeleteAt != nil && journey.DeleteAt.Before(journey.CreatedAt) {
+		return errors.New("delete_at must not be before created_at")
 	}
 	if journey.StartsAt != nil && journey.StartsAt.IsZero() {
 		return errors.New("starts_at must be a non-zero time")
