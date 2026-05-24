@@ -1478,13 +1478,27 @@ func TestParseCaveatUnknownAndMalformed(t *testing.T) {
 		t.Fatalf("Kind = %q, want CaveatKindUnknown", noOperator.Kind)
 	}
 
+	unknownAction, err := ParseCaveat("action=future.admin.action")
+	if err != nil {
+		t.Fatalf("ParseCaveat unknown-action error = %v", err)
+	}
+	if unknownAction.Kind != CaveatKindAction {
+		t.Fatalf("Kind = %q, want CaveatKindAction", unknownAction.Kind)
+	}
+	if unknownAction.Action != SessionAction("future.admin.action") {
+		t.Fatalf("Action = %q, want future.admin.action", unknownAction.Action)
+	}
+	if unknownAction.Action.Valid() {
+		t.Fatal("unknown action should not satisfy SessionAction.Valid()")
+	}
+
 	errorCases := []string{
 		"",
 		"time<not-a-date",
 		"journey=not-a-uuid",
 		"user=not-a-uuid",
 		"client_app=not-a-uuid",
-		"action=admin.god",
+		"action=",
 	}
 	for _, predicate := range errorCases {
 		t.Run(predicate, func(t *testing.T) {

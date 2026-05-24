@@ -128,14 +128,17 @@ func ParseCaveat(predicate string) (Caveat, error) {
 			UUID: id,
 		}, nil
 	case "action":
-		action := SessionAction(value)
-		if !action.Valid() {
-			return Caveat{}, fmt.Errorf("action caveat value must be a known SessionAction")
+		if value == "" {
+			return Caveat{}, errors.New("action caveat value must be non-empty")
 		}
+		// Unknown action values are intentionally accepted so future
+		// SessionAction additions round-trip losslessly through implementations
+		// running an older protocol version. Callers that need to gate on the
+		// action set call SessionAction.Valid() on Caveat.Action.
 		return Caveat{
 			Kind:   CaveatKindAction,
 			Raw:    predicate,
-			Action: action,
+			Action: SessionAction(value),
 		}, nil
 	default:
 		return Caveat{Kind: CaveatKindUnknown, Raw: predicate}, nil
