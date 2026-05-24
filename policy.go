@@ -73,11 +73,42 @@ type RetentionCapabilities struct {
 	DeleteSupported      bool            `json:"delete_supported"`
 }
 
+// DataVisibility describes who may see a class of journey data.
+type DataVisibility string
+
+const (
+	// DataPrivate means the data is visible only to the submitting participant
+	// and server-side policy enforcement.
+	DataPrivate DataVisibility = "private"
+	// DataParticipants means the data is visible to participants in the same
+	// journey.
+	DataParticipants DataVisibility = "participants"
+	// DataPublic means the data may be visible outside the journey.
+	DataPublic DataVisibility = "public"
+)
+
+// Valid reports whether the data visibility is a known OpenCaravan value.
+func (v DataVisibility) Valid() bool {
+	switch v {
+	case DataPrivate, DataParticipants, DataPublic:
+		return true
+	default:
+		return false
+	}
+}
+
 // JourneyPolicy is the policy snapshot a participant accepts for one journey.
 type JourneyPolicy struct {
 	PolicyHash string          `json:"policy_hash"`
+	Privacy    PrivacyPolicy   `json:"privacy"`
 	Retention  RetentionPolicy `json:"retention"`
-	Metadata   map[string]any  `json:"metadata,omitempty"`
+}
+
+// PrivacyPolicy describes who may see the main classes of journey data.
+type PrivacyPolicy struct {
+	Participants DataVisibility `json:"participants"`
+	Location     DataVisibility `json:"location"`
+	Media        DataVisibility `json:"media"`
 }
 
 // RetentionPolicy describes how a journey will handle retained participant and

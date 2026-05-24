@@ -15,7 +15,7 @@ type JourneyInvitePayload struct {
 	Type        string    `json:"type"`
 	Version     int       `json:"version"`
 	ServerURL   string    `json:"server_url"`
-	JourneyID   string    `json:"journey_id"`
+	JourneyID   UUID      `json:"journey_id"`
 	InviteToken string    `json:"invite_token"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	PolicyHash  string    `json:"policy_hash"`
@@ -24,7 +24,7 @@ type JourneyInvitePayload struct {
 
 // NewJourneyInvitePayload returns a journey invite payload with the current
 // type and version fields populated.
-func NewJourneyInvitePayload(serverURL, journeyID, inviteToken string, expiresAt time.Time) JourneyInvitePayload {
+func NewJourneyInvitePayload(serverURL string, journeyID UUID, inviteToken string, expiresAt time.Time) JourneyInvitePayload {
 	return JourneyInvitePayload{
 		Type:        JourneyInvitePayloadType,
 		Version:     JourneyInvitePayloadVersion,

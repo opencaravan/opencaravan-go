@@ -36,9 +36,14 @@ import (
 )
 
 func main() {
+	journeyID, err := opencaravan.ParseUUID("11111111-1111-4111-8111-111111111111")
+	if err != nil {
+		panic(err)
+	}
+
 	invite := opencaravan.NewJourneyInvitePayload(
 		"https://public.spivot.net",
-		"journey_123",
+		journeyID,
 		"opaque-token",
 		time.Now().Add(30*time.Minute),
 	)
@@ -53,8 +58,9 @@ The package currently includes draft types for:
 
 - server policy and retention capability advertisements
 - per-journey policy snapshots
-- journey, participant, sharing, and vehicle vocabulary
+- journeys, segments, human participants, client apps, and vehicles
 - portable journey invite payloads
+- participant-shared journey media
 - position telemetry samples
 
 Spivot Server is the reference backend implementation for OpenCaravan and will

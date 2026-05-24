@@ -14,9 +14,11 @@ const (
 
 // PositionSample is one captured participant position update.
 type PositionSample struct {
-	JourneyID              string    `json:"journey_id"`
-	ParticipantID          string    `json:"participant_id"`
-	DeviceID               string    `json:"device_id,omitempty"`
+	JourneyID              UUID      `json:"journey_id"`
+	SegmentID              UUID      `json:"segment_id"`
+	SegmentVehicleID       UUID      `json:"segment_vehicle_id"`
+	ParticipantID          UUID      `json:"participant_id"`
+	ClientAppID            UUID      `json:"client_app_id"`
 	ClientSequence         int64     `json:"client_sequence"`
 	CapturedAt             time.Time `json:"captured_at"`
 	LatitudeE7             int32     `json:"latitude_e7"`
@@ -32,9 +34,24 @@ type PositionSample struct {
 	ClientMetadataRevision string    `json:"client_metadata_revision,omitempty"`
 }
 
-// Validate reports whether the sample contains a valid sequence, capture time,
-// and latitude/longitude pair.
+// Validate reports whether the sample contains valid object identities,
+// sequence data, capture time, and latitude/longitude pair.
 func (s PositionSample) Validate() error {
+	if !s.JourneyID.Valid() {
+		return errors.New("journey_id must be a valid UUID")
+	}
+	if !s.SegmentID.Valid() {
+		return errors.New("segment_id must be a valid UUID")
+	}
+	if !s.SegmentVehicleID.Valid() {
+		return errors.New("segment_vehicle_id must be a valid UUID")
+	}
+	if !s.ParticipantID.Valid() {
+		return errors.New("participant_id must be a valid UUID")
+	}
+	if !s.ClientAppID.Valid() {
+		return errors.New("client_app_id must be a valid UUID")
+	}
 	if s.ClientSequence < 0 {
 		return errors.New("client sequence must be non-negative")
 	}
