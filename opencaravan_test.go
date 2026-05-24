@@ -252,9 +252,23 @@ func TestUserProfileContactValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "signal phone link",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactSignal,
+				Value: "https://signal.me/#p/+15035551212",
+			},
+		},
+		{
+			name: "signal username link",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactSignal,
+				Value: "https://signal.me/#eu/abcDEF123_-",
+			},
+		},
+		{
 			name: "custom kind",
 			contact: UserProfileContact{
-				Kind:  "signal",
+				Kind:  "club_radio",
 				Value: "+15035551212",
 			},
 		},
@@ -285,6 +299,38 @@ func TestUserProfileContactValidate(t *testing.T) {
 			contact: UserProfileContact{
 				Kind:  UserProfileContactEmailAddress,
 				Value: "Riley <driver@example.com>",
+			},
+			wantErr: true,
+		},
+		{
+			name: "signal link must be https",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactSignal,
+				Value: "http://signal.me/#p/+15035551212",
+			},
+			wantErr: true,
+		},
+		{
+			name: "signal link must use signal.me",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactSignal,
+				Value: "https://example.com/#p/+15035551212",
+			},
+			wantErr: true,
+		},
+		{
+			name: "signal phone link must contain mobile number",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactSignal,
+				Value: "https://signal.me/#p/503-555-1212",
+			},
+			wantErr: true,
+		},
+		{
+			name: "signal link must contain fragment",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactSignal,
+				Value: "https://signal.me/",
 			},
 			wantErr: true,
 		},
@@ -784,6 +830,11 @@ func validUser() User {
 					DisplayText: "+1 503 555 1212",
 					Value:       "+15035551212",
 					Verified:    true,
+				},
+				{
+					Kind:  UserProfileContactSignal,
+					Label: "Signal",
+					Value: "https://signal.me/#p/+15035551212",
 				},
 			},
 		},

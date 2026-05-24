@@ -63,6 +63,9 @@ const (
 	// UserProfileContactEmailAddress is an email address that clients may use
 	// with compatible local messaging capabilities.
 	UserProfileContactEmailAddress = "email_address"
+	// UserProfileContactSignal is a Signal.me URL that clients may use to
+	// start a Signal conversation.
+	UserProfileContactSignal = "signal"
 )
 
 // UserProfileContact describes one opt-in profile-visible contact identifier.
@@ -179,6 +182,10 @@ func (contact UserProfileContact) Validate() error {
 		if err != nil || address.Name != "" || address.Address != contact.Value {
 			return errors.New("email_address value must be an email address")
 		}
+	case UserProfileContactSignal:
+		if !validSignalMeURL(contact.Value) {
+			return errors.New("signal value must be a Signal.me URL")
+		}
 	}
 	return nil
 }
@@ -198,4 +205,26 @@ func validMobileNumber(value string) bool {
 		}
 	}
 	return true
+}
+
+func validSignalMeURL(value string) bool {
+	u, err := url.Parse(value)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "signal.me") || u.Port() != "" {
+		return false
+	}
+	if u.Path != "" && u.Path != "/" {
+		return false
+	}
+
+	switch {
+	case strings.HasPrefix(u.Fragment, "p/"):
+		return validMobileNumber(strings.TrimPrefix(u.Fragment, "p/"))
+	case strings.HasPrefix(u.Fragment, "eu/"):
+		return strings.TrimPrefix(u.Fragment, "eu/") != ""
+	default:
+		return false
+	}
 }

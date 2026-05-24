@@ -80,6 +80,11 @@ func main() {
 					DisplayText: "+1 503 555 1212",
 					Value:       "+15035551212",
 				},
+				{
+					Kind:  opencaravan.UserProfileContactSignal,
+					Label: "Signal",
+					Value: "https://signal.me/#eu/exampleSignalShareToken",
+				},
 			},
 		},
 		DeletionAfterInactivityDays: &deletionAfterInactivityDays,
@@ -208,9 +213,12 @@ resource ID and use the digest as a cache and integrity key.
 accent colors. It accepts `#RRGGBB`, rejects alpha, and serializes as canonical
 lowercase `#rrggbb`.
 
-`UserProfileContact` stores direct contact identifiers, not actions. For
-example, a `mobile_number` value can support calling, SMS, or compatible local
-messaging apps depending on client capabilities. Public web or app links belong
+`UserProfileContact` stores direct contact identifiers, not actions. Known
+contact kinds include `mobile_number`, `email_address`, and `signal`. A
+`mobile_number` value can support calling, SMS, or compatible local messaging
+apps depending on client capabilities. A `signal` value is an HTTPS Signal.me
+link such as `https://signal.me/#p/+15035551212` or
+`https://signal.me/#eu/exampleSignalShareToken`. Public web or app links belong
 in `UserProfileLink`.
 
 `InviteGenerationPermissions` describes what kind of invites a user or journey
