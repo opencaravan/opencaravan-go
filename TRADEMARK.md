@@ -1,8 +1,8 @@
 # Trademark Policy
 
-"OpenCaravan" is a trademark of the OpenCaravan project. The Apache License
-2.0 covers the source code in this repository; this policy covers the protocol
-name and brand.
+"OpenCaravan" is a trademark of David C. McNett. The Apache License 2.0 covers
+the source code in this repository; this policy covers the protocol name and
+brand.
 
 OpenCaravan is meant to be implemented widely. The point of this policy is to
 keep the name a reliable signal of *the protocol*, while making it easy for
