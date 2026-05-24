@@ -1015,3 +1015,500 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 func ptr[T any](value T) *T {
 	return &value
 }
+
+const samplePublicKeyPEM = `-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEXAMPLEXAMPLEXAMPLEXAMPLEXAMPL
+EXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAA==
+-----END PUBLIC KEY-----`
+
+const sampleCSRPEM = `-----BEGIN CERTIFICATE REQUEST-----
+MIIBVTCB+wIBADBaMQswCQYDVQQGEwJVUzELMAkGA1UECAwCQ0ExFTATBgNVBAcM
+DFNhbiBGcmFuY2lzY28xDzANBgNVBAoMBkV4YW1wbGUxFjAUBgNVBAMMDWV4YW1w
+EXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLE
+-----END CERTIFICATE REQUEST-----`
+
+const sampleLeafCertPEM = `-----BEGIN CERTIFICATE-----
+MIIBhTCCASugAwIBAgIUEXAMPLEXAMPLEXAMPLEXAMPLEXAMPwCgYIKoZIzj0EAwIw
+EXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLEXAMPLE
+-----END CERTIFICATE-----`
+
+const sampleCACertPEM = `-----BEGIN CERTIFICATE-----
+MIIBhTCCASugAwIBAgIUEXAMPLECAEXAMPLECAEXAMPLECACAwCgYIKoZIzj0EAwIw
+CASAMPLECASAMPLECASAMPLECASAMPLECASAMPLECASAMPLEC
+-----END CERTIFICATE-----`
+
+func TestKeyAlgorithmValid(t *testing.T) {
+	tests := []struct {
+		name string
+		alg  KeyAlgorithm
+		want bool
+	}{
+		{name: "p256-ecdsa", alg: KeyAlgorithmP256ECDSA, want: true},
+		{name: "unknown", alg: KeyAlgorithm("rsa-2048"), want: false},
+		{name: "empty", alg: KeyAlgorithm(""), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.alg.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPublicKeyValidate(t *testing.T) {
+	valid := PublicKey{
+		Algorithm: KeyAlgorithmP256ECDSA,
+		KeyPEM:    samplePublicKeyPEM,
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded PublicKey
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if decoded != valid {
+		t.Fatalf("round-trip mismatch: got %+v, want %+v", decoded, valid)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*PublicKey)
+	}{
+		{name: "unknown algorithm", mutate: func(k *PublicKey) { k.Algorithm = KeyAlgorithm("rsa-2048") }},
+		{name: "empty pem", mutate: func(k *PublicKey) { k.KeyPEM = "" }},
+		{name: "missing begin", mutate: func(k *PublicKey) { k.KeyPEM = "no pem markers here" }},
+		{name: "missing end", mutate: func(k *PublicKey) { k.KeyPEM = "-----BEGIN PUBLIC KEY-----\nABC" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := valid
+			tt.mutate(&key)
+			if err := key.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestClientAppEnrollmentValidate(t *testing.T) {
+	issued := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	valid := ClientAppEnrollment{
+		ID:               testClientAppID,
+		UserID:           testUserID,
+		CertificateChain: []string{sampleLeafCertPEM},
+		IssuedTime:       issued,
+		NotAfter:         issued.Add(7 * 24 * time.Hour),
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ClientAppEnrollment)
+	}{
+		{name: "missing id", mutate: func(e *ClientAppEnrollment) { e.ID = "" }},
+		{name: "missing user id", mutate: func(e *ClientAppEnrollment) { e.UserID = "" }},
+		{name: "empty chain", mutate: func(e *ClientAppEnrollment) { e.CertificateChain = nil }},
+		{name: "malformed chain entry", mutate: func(e *ClientAppEnrollment) { e.CertificateChain = []string{"not pem"} }},
+		{name: "missing issued time", mutate: func(e *ClientAppEnrollment) { e.IssuedTime = time.Time{} }},
+		{name: "missing not after", mutate: func(e *ClientAppEnrollment) { e.NotAfter = time.Time{} }},
+		{name: "not after before issued", mutate: func(e *ClientAppEnrollment) { e.NotAfter = issued.Add(-time.Hour) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			enrollment := valid
+			enrollment.CertificateChain = append([]string(nil), valid.CertificateChain...)
+			tt.mutate(&enrollment)
+			if err := enrollment.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestKeyAttestationValidate(t *testing.T) {
+	tests := []struct {
+		name        string
+		attestation KeyAttestation
+		wantErr     bool
+	}{
+		{name: "apple", attestation: KeyAttestation{Format: KeyAttestationFormatAppleAppAttest, Data: "AAAA"}, wantErr: false},
+		{name: "android", attestation: KeyAttestation{Format: KeyAttestationFormatAndroidKeyAttestation, Data: "AAAA"}, wantErr: false},
+		{name: "webauthn", attestation: KeyAttestation{Format: KeyAttestationFormatWebAuthn, Data: "AAAA"}, wantErr: false},
+		{name: "unknown format accepted", attestation: KeyAttestation{Format: KeyAttestationFormat("future-platform"), Data: "AAAA"}, wantErr: false},
+		{name: "missing format", attestation: KeyAttestation{Data: "AAAA"}, wantErr: true},
+		{name: "missing data", attestation: KeyAttestation{Format: KeyAttestationFormatAppleAppAttest}, wantErr: true},
+		{name: "unpadded data", attestation: KeyAttestation{Format: KeyAttestationFormatAppleAppAttest, Data: "AAA"}, wantErr: true},
+		{name: "non-base64 data", attestation: KeyAttestation{Format: KeyAttestationFormatAppleAppAttest, Data: "not!base64@!="}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.attestation.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestKeyAttestationFormatValid(t *testing.T) {
+	tests := []struct {
+		name   string
+		format KeyAttestationFormat
+		want   bool
+	}{
+		{name: "apple", format: KeyAttestationFormatAppleAppAttest, want: true},
+		{name: "android", format: KeyAttestationFormatAndroidKeyAttestation, want: true},
+		{name: "webauthn", format: KeyAttestationFormatWebAuthn, want: true},
+		{name: "unknown", format: KeyAttestationFormat("future"), want: false},
+		{name: "empty", format: KeyAttestationFormat(""), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.format.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClientAppEnrollmentRequestJSONAndValidate(t *testing.T) {
+	valid := NewClientAppEnrollmentRequest("invite-token-abc", sampleCSRPEM)
+	valid.DisplayName = "Riley's iPhone"
+	valid.KeyAttestation = &KeyAttestation{
+		Format: KeyAttestationFormatAppleAppAttest,
+		Data:   "AAAA",
+	}
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded ClientAppEnrollmentRequest
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("decoded Validate() error = %v", err)
+	}
+	if decoded.Type != ClientAppEnrollmentRequestType {
+		t.Fatalf("Type = %q, want %q", decoded.Type, ClientAppEnrollmentRequestType)
+	}
+	if decoded.KeyAttestation == nil || decoded.KeyAttestation.Format != KeyAttestationFormatAppleAppAttest {
+		t.Fatalf("KeyAttestation = %+v", decoded.KeyAttestation)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ClientAppEnrollmentRequest)
+	}{
+		{name: "wrong type", mutate: func(r *ClientAppEnrollmentRequest) { r.Type = "wrong" }},
+		{name: "wrong version", mutate: func(r *ClientAppEnrollmentRequest) { r.Version = 99 }},
+		{name: "missing invite token", mutate: func(r *ClientAppEnrollmentRequest) { r.InviteToken = "" }},
+		{name: "malformed csr", mutate: func(r *ClientAppEnrollmentRequest) { r.CSRPEM = "not pem" }},
+		{name: "invalid attestation", mutate: func(r *ClientAppEnrollmentRequest) {
+			r.KeyAttestation = &KeyAttestation{Format: KeyAttestationFormatAppleAppAttest}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := valid
+			tt.mutate(&req)
+			if err := req.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestClientAppEnrollmentResponseJSONAndValidate(t *testing.T) {
+	issued := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	enrollment := ClientAppEnrollment{
+		ID:               testClientAppID,
+		UserID:           testUserID,
+		CertificateChain: []string{sampleLeafCertPEM},
+		IssuedTime:       issued,
+		NotAfter:         issued.Add(7 * 24 * time.Hour),
+	}
+	valid := NewClientAppEnrollmentResponse(enrollment, []string{sampleCACertPEM})
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded ClientAppEnrollmentResponse
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("decoded Validate() error = %v", err)
+	}
+	if decoded.Type != ClientAppEnrollmentResponseType {
+		t.Fatalf("Type = %q, want %q", decoded.Type, ClientAppEnrollmentResponseType)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ClientAppEnrollmentResponse)
+	}{
+		{name: "wrong type", mutate: func(r *ClientAppEnrollmentResponse) { r.Type = "wrong" }},
+		{name: "wrong version", mutate: func(r *ClientAppEnrollmentResponse) { r.Version = 99 }},
+		{name: "empty ca chain", mutate: func(r *ClientAppEnrollmentResponse) { r.ServerCAChain = nil }},
+		{name: "malformed ca entry", mutate: func(r *ClientAppEnrollmentResponse) { r.ServerCAChain = []string{"not pem"} }},
+		{name: "invalid enrollment", mutate: func(r *ClientAppEnrollmentResponse) { r.Enrollment.ID = "" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := valid
+			resp.ServerCAChain = append([]string(nil), valid.ServerCAChain...)
+			tt.mutate(&resp)
+			if err := resp.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestSessionActionValid(t *testing.T) {
+	tests := []struct {
+		name   string
+		action SessionAction
+		want   bool
+	}{
+		{name: "journey.read", action: SessionActionJourneyRead, want: true},
+		{name: "journey.write", action: SessionActionJourneyWrite, want: true},
+		{name: "telemetry.write", action: SessionActionTelemetryWrite, want: true},
+		{name: "media.upload", action: SessionActionMediaUpload, want: true},
+		{name: "invite.create", action: SessionActionInviteCreate, want: true},
+		{name: "unknown", action: SessionAction("admin.god"), want: false},
+		{name: "empty", action: SessionAction(""), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.action.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSessionRequestJSONAndValidate(t *testing.T) {
+	journeyID := testJourneyID
+	valid := NewSessionRequest([]SessionAction{SessionActionTelemetryWrite, SessionActionJourneyRead}, 7200)
+	valid.JourneyID = &journeyID
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded SessionRequest
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("decoded Validate() error = %v", err)
+	}
+	if decoded.JourneyID == nil || *decoded.JourneyID != journeyID {
+		t.Fatalf("JourneyID = %v, want %v", decoded.JourneyID, journeyID)
+	}
+	if len(decoded.Actions) != 2 {
+		t.Fatalf("Actions len = %d, want 2", len(decoded.Actions))
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*SessionRequest)
+	}{
+		{name: "wrong type", mutate: func(r *SessionRequest) { r.Type = "wrong" }},
+		{name: "wrong version", mutate: func(r *SessionRequest) { r.Version = 99 }},
+		{name: "invalid journey id", mutate: func(r *SessionRequest) { id := UUID("not-a-uuid"); r.JourneyID = &id }},
+		{name: "no actions", mutate: func(r *SessionRequest) { r.Actions = nil }},
+		{name: "unknown action", mutate: func(r *SessionRequest) { r.Actions = []SessionAction{SessionAction("admin.god")} }},
+		{name: "negative lifetime", mutate: func(r *SessionRequest) { r.LifetimeSeconds = -1 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := valid
+			req.Actions = append([]SessionAction(nil), valid.Actions...)
+			tt.mutate(&req)
+			if err := req.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestSessionResponseJSONAndValidate(t *testing.T) {
+	expirationTime := time.Date(2026, 5, 24, 14, 0, 0, 0, time.UTC)
+	valid := NewSessionResponse("AQAAAAAAQ29jb251dCEK", expirationTime)
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded SessionResponse
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatalf("decoded Validate() error = %v", err)
+	}
+	if !decoded.ExpirationTime.Equal(expirationTime) {
+		t.Fatalf("ExpirationTime = %v, want %v", decoded.ExpirationTime, expirationTime)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*SessionResponse)
+	}{
+		{name: "wrong type", mutate: func(r *SessionResponse) { r.Type = "wrong" }},
+		{name: "wrong version", mutate: func(r *SessionResponse) { r.Version = 99 }},
+		{name: "empty macaroon", mutate: func(r *SessionResponse) { r.Macaroon = "" }},
+		{name: "padded base64 macaroon", mutate: func(r *SessionResponse) { r.Macaroon = "AAAA====" }},
+		{name: "non-base64 macaroon", mutate: func(r *SessionResponse) { r.Macaroon = "not!base64@all" }},
+		{name: "zero expiration", mutate: func(r *SessionResponse) { r.ExpirationTime = time.Time{} }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := valid
+			tt.mutate(&resp)
+			if err := resp.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestCaveatBuildersAndParseRoundTrip(t *testing.T) {
+	when := time.Date(2026, 5, 24, 12, 30, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		predicate string
+		want      Caveat
+	}{
+		{
+			name:      "time before",
+			predicate: CaveatTimeBefore(when),
+			want:      Caveat{Kind: CaveatKindTimeBefore, Time: when},
+		},
+		{
+			name:      "journey",
+			predicate: CaveatJourney(testJourneyID),
+			want:      Caveat{Kind: CaveatKindJourney, UUID: testJourneyID},
+		},
+		{
+			name:      "user",
+			predicate: CaveatUser(testUserID),
+			want:      Caveat{Kind: CaveatKindUser, UUID: testUserID},
+		},
+		{
+			name:      "client_app",
+			predicate: CaveatClientApp(testClientAppID),
+			want:      Caveat{Kind: CaveatKindClientApp, UUID: testClientAppID},
+		},
+		{
+			name:      "action",
+			predicate: CaveatAction(SessionActionTelemetryWrite),
+			want:      Caveat{Kind: CaveatKindAction, Action: SessionActionTelemetryWrite},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseCaveat(tt.predicate)
+			if err != nil {
+				t.Fatalf("ParseCaveat(%q) error = %v", tt.predicate, err)
+			}
+			if got.Kind != tt.want.Kind {
+				t.Fatalf("Kind = %q, want %q", got.Kind, tt.want.Kind)
+			}
+			if got.Raw != tt.predicate {
+				t.Fatalf("Raw = %q, want %q", got.Raw, tt.predicate)
+			}
+			if !got.Time.Equal(tt.want.Time) {
+				t.Fatalf("Time = %v, want %v", got.Time, tt.want.Time)
+			}
+			if got.UUID != tt.want.UUID {
+				t.Fatalf("UUID = %q, want %q", got.UUID, tt.want.UUID)
+			}
+			if got.Action != tt.want.Action {
+				t.Fatalf("Action = %q, want %q", got.Action, tt.want.Action)
+			}
+		})
+	}
+}
+
+func TestParseCaveatUnknownAndMalformed(t *testing.T) {
+	unknown, err := ParseCaveat("custom=anything")
+	if err != nil {
+		t.Fatalf("ParseCaveat unknown error = %v", err)
+	}
+	if unknown.Kind != CaveatKindUnknown {
+		t.Fatalf("Kind = %q, want CaveatKindUnknown", unknown.Kind)
+	}
+	if unknown.Raw != "custom=anything" {
+		t.Fatalf("Raw = %q", unknown.Raw)
+	}
+
+	noOperator, err := ParseCaveat("just-a-flag")
+	if err != nil {
+		t.Fatalf("ParseCaveat no-operator error = %v", err)
+	}
+	if noOperator.Kind != CaveatKindUnknown {
+		t.Fatalf("Kind = %q, want CaveatKindUnknown", noOperator.Kind)
+	}
+
+	unknownAction, err := ParseCaveat("action=future.admin.action")
+	if err != nil {
+		t.Fatalf("ParseCaveat unknown-action error = %v", err)
+	}
+	if unknownAction.Kind != CaveatKindAction {
+		t.Fatalf("Kind = %q, want CaveatKindAction", unknownAction.Kind)
+	}
+	if unknownAction.Action != SessionAction("future.admin.action") {
+		t.Fatalf("Action = %q, want future.admin.action", unknownAction.Action)
+	}
+	if unknownAction.Action.Valid() {
+		t.Fatal("unknown action should not satisfy SessionAction.Valid()")
+	}
+
+	errorCases := []string{
+		"",
+		"time<not-a-date",
+		"journey=not-a-uuid",
+		"user=not-a-uuid",
+		"client_app=not-a-uuid",
+		"action=",
+	}
+	for _, predicate := range errorCases {
+		t.Run(predicate, func(t *testing.T) {
+			if _, err := ParseCaveat(predicate); err == nil {
+				t.Fatalf("ParseCaveat(%q) error = nil, want error", predicate)
+			}
+		})
+	}
+}
