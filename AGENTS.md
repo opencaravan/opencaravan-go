@@ -25,6 +25,40 @@ Run `just ci` before pushing.
 - Avoid committing protocol semantics that are still speculative. Use narrow,
   composable types and validation helpers.
 
+## Public API Surface
+
+The exported surface of this module is a protocol commitment and deserves
+best-in-class Go API hygiene. The package should feel natural to Go developers
+while preserving exact OpenCaravan wire semantics for every implementation.
+
+- Keep exported names small, idiomatic, and durable. Do not export helper types,
+  intermediate concepts, or implementation details just because tests or one
+  caller can reach them.
+- Prefer useful zero values. When a zero value is invalid on the wire, make that
+  obvious with validation and Godoc.
+- Constructors should earn their place by setting required protocol defaults,
+  normalizing input, or preventing malformed values. Otherwise prefer ordinary
+  struct literals.
+- Use concrete types for protocol concepts. Reach for interfaces only at package
+  boundaries where Go callers genuinely need substitution.
+- Design marshaling and unmarshaling deliberately. JSON output must be stable,
+  predictable, and compatible with non-Go OpenCaravan implementations.
+- Implement `json.Marshaler`, `json.Unmarshaler`, `encoding.TextMarshaler`, or
+  `encoding.TextUnmarshaler` when a protocol type has canonical text, strict
+  validation, version-aware decoding, or compatibility behavior that plain
+  struct tags cannot express cleanly.
+- Reject malformed wire values with clear errors. Do not silently coerce unknown
+  enum values, invalid coordinates, impossible timestamps, or lossy numeric
+  representations.
+- Preserve unknown or extension fields only through explicit extension points.
+  Avoid casual `map[string]any` escape hatches on core protocol types.
+- Keep optional fields honest. Prefer `omitempty` only when absence is
+  semantically different from a zero value, and use pointer fields when the
+  protocol needs that distinction.
+- Favor Go-flavored APIs: clear package names, simple methods, sentinel values
+  only when useful, wrapped errors at boundaries, table-driven tests, examples,
+  and no needless builder/factory ceremony.
+
 ## Godoc Expectations
 
 Godoc is a primary product surface for this module. Treat documentation with the
