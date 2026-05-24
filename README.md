@@ -67,10 +67,10 @@ func main() {
 			AccentColor: opencaravan.HexColor("#3366cc"),
 			Contacts: []opencaravan.UserProfileContact{
 				{
-					Kind:        opencaravan.UserProfileContactSMS,
+					Kind:        opencaravan.UserProfileContactMobileNumber,
 					Label:       "Text Riley",
 					DisplayText: "+1 503 555 1212",
-					URI:         "sms:+15035551212",
+					Value:       "+15035551212",
 				},
 			},
 		},
@@ -188,6 +188,11 @@ resource ID and use the digest as a cache and integrity key.
 `HexColor` is the protocol type for opaque sRGB UI colors such as profile
 accent colors. It accepts `#RRGGBB`, rejects alpha, and serializes as canonical
 lowercase `#rrggbb`.
+
+`UserProfileContact` stores direct contact identifiers, not actions. For
+example, a `mobile_number` value can support calling, SMS, or compatible local
+messaging apps depending on client capabilities. Public web or app links belong
+in `UserProfileLink`.
 
 `User.DeletionAfterInactivityDays` is optional. When set, it declares the number
 of inactive days after which a server may delete the user record if no

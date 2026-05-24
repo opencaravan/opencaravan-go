@@ -3,7 +3,9 @@ package opencaravan
 import (
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/url"
+	"strings"
 )
 
 // User describes a server-scoped OpenCaravan identity.
@@ -47,43 +49,26 @@ type UserProfileLink struct {
 	URL   string `json:"url"`
 }
 
-// UserProfileContactKind describes the type of profile-visible contact method.
-type UserProfileContactKind string
-
 const (
-	// UserProfileContactPhone means the contact URI starts a phone call.
-	UserProfileContactPhone UserProfileContactKind = "phone"
-	// UserProfileContactSMS means the contact URI starts an SMS conversation.
-	UserProfileContactSMS UserProfileContactKind = "sms"
-	// UserProfileContactEmail means the contact URI starts an email message.
-	UserProfileContactEmail UserProfileContactKind = "email"
-	// UserProfileContactURL means the contact URI opens a general URL.
-	UserProfileContactURL UserProfileContactKind = "url"
-	// UserProfileContactOther means the contact URI is a server- or
-	// client-understood contact method outside the standard set.
-	UserProfileContactOther UserProfileContactKind = "other"
+	// UserProfileContactMobileNumber is a mobile telephone number that clients
+	// may use for compatible local calling or messaging capabilities.
+	UserProfileContactMobileNumber = "mobile_number"
+	// UserProfileContactEmailAddress is an email address that clients may use
+	// with compatible local messaging capabilities.
+	UserProfileContactEmailAddress = "email_address"
 )
 
-// Valid reports whether kind is a known OpenCaravan profile contact kind.
-func (kind UserProfileContactKind) Valid() bool {
-	switch kind {
-	case UserProfileContactPhone, UserProfileContactSMS, UserProfileContactEmail, UserProfileContactURL, UserProfileContactOther:
-		return true
-	default:
-		return false
-	}
-}
-
-// UserProfileContact describes one opt-in profile-visible contact method.
+// UserProfileContact describes one opt-in profile-visible contact identifier.
 //
-// URI is the actionable value for clients, such as tel:+15035551212,
-// sms:+15035551212, mailto:driver@example.com, or an https URL.
+// Contacts are addressable identifiers such as a mobile number or email
+// address. Links remain separate because they describe public destinations
+// rather than direct contact channels.
 type UserProfileContact struct {
-	Kind        UserProfileContactKind `json:"kind"`
-	Label       string                 `json:"label,omitempty"`
-	DisplayText string                 `json:"display_text,omitempty"`
-	URI         string                 `json:"uri"`
-	Verified    bool                   `json:"verified"`
+	Kind        string `json:"kind"`
+	Label       string `json:"label,omitempty"`
+	Value       string `json:"value"`
+	DisplayText string `json:"display_text,omitempty"`
+	Verified    bool   `json:"verified"`
 }
 
 // Validate reports whether user contains the required identity and profile
@@ -152,31 +137,24 @@ func (link UserProfileLink) Validate() error {
 	return nil
 }
 
-// Validate reports whether contact contains a known kind and actionable URI.
+// Validate reports whether contact contains a kind and addressable value.
 func (contact UserProfileContact) Validate() error {
-	if !contact.Kind.Valid() {
-		return errors.New("kind must be a known OpenCaravan value")
+	if strings.TrimSpace(contact.Kind) == "" {
+		return errors.New("kind must be set")
 	}
-	u, err := url.Parse(contact.URI)
-	if err != nil || u.Scheme == "" {
-		return errors.New("uri must be an absolute URI")
+	if strings.TrimSpace(contact.Value) == "" {
+		return errors.New("value must be set")
 	}
+
 	switch contact.Kind {
-	case UserProfileContactPhone:
-		if u.Scheme != "tel" {
-			return errors.New("phone contact uri must use tel scheme")
+	case UserProfileContactMobileNumber:
+		if !validMobileNumber(contact.Value) {
+			return errors.New("mobile_number value must be an E.164-style number")
 		}
-	case UserProfileContactSMS:
-		if u.Scheme != "sms" {
-			return errors.New("sms contact uri must use sms scheme")
-		}
-	case UserProfileContactEmail:
-		if u.Scheme != "mailto" {
-			return errors.New("email contact uri must use mailto scheme")
-		}
-	case UserProfileContactURL:
-		if u.Scheme != "http" && u.Scheme != "https" {
-			return errors.New("url contact uri must use http or https scheme")
+	case UserProfileContactEmailAddress:
+		address, err := mail.ParseAddress(contact.Value)
+		if err != nil || address.Name != "" || address.Address != contact.Value {
+			return errors.New("email_address value must be an email address")
 		}
 	}
 	return nil
@@ -185,4 +163,16 @@ func (contact UserProfileContact) Validate() error {
 func validAbsoluteURL(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+func validMobileNumber(value string) bool {
+	if len(value) < 3 || len(value) > 16 || value[0] != '+' {
+		return false
+	}
+	for _, r := range value[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

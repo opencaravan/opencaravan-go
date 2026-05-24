@@ -155,24 +155,70 @@ func TestServerPolicyValidate(t *testing.T) {
 	}
 }
 
-func TestUserProfileContactKindValid(t *testing.T) {
+func TestUserProfileContactValidate(t *testing.T) {
 	tests := []struct {
-		name string
-		kind UserProfileContactKind
-		want bool
+		name    string
+		contact UserProfileContact
+		wantErr bool
 	}{
-		{name: "phone", kind: UserProfileContactPhone, want: true},
-		{name: "sms", kind: UserProfileContactSMS, want: true},
-		{name: "email", kind: UserProfileContactEmail, want: true},
-		{name: "url", kind: UserProfileContactURL, want: true},
-		{name: "other", kind: UserProfileContactOther, want: true},
-		{name: "unknown", kind: UserProfileContactKind("unknown"), want: false},
+		{
+			name: "mobile number",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactMobileNumber,
+				Value: "+15035551212",
+			},
+		},
+		{
+			name: "email address",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactEmailAddress,
+				Value: "driver@example.com",
+			},
+		},
+		{
+			name: "custom kind",
+			contact: UserProfileContact{
+				Kind:  "signal",
+				Value: "+15035551212",
+			},
+		},
+		{
+			name: "missing kind",
+			contact: UserProfileContact{
+				Value: "+15035551212",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing value",
+			contact: UserProfileContact{
+				Kind: UserProfileContactMobileNumber,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid mobile number",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactMobileNumber,
+				Value: "503-555-1212",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid email address",
+			contact: UserProfileContact{
+				Kind:  UserProfileContactEmailAddress,
+				Value: "Riley <driver@example.com>",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.kind.Valid(); got != tt.want {
-				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			err := tt.contact.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -207,8 +253,8 @@ func TestUserJSONAndValidate(t *testing.T) {
 	if decoded.Profile.AccentColor != HexColor("#3366cc") {
 		t.Fatalf("AccentColor = %q, want #3366cc", decoded.Profile.AccentColor)
 	}
-	if got := decoded.Profile.Contacts[0].URI; got != "sms:+15035551212" {
-		t.Fatalf("contact URI = %q, want sms:+15035551212", got)
+	if got := decoded.Profile.Contacts[0].Value; got != "+15035551212" {
+		t.Fatalf("contact value = %q, want +15035551212", got)
 	}
 	if decoded.DeletionAfterInactivityDays == nil || *decoded.DeletionAfterInactivityDays != testUserInactivityDeletionDays {
 		t.Fatalf("DeletionAfterInactivityDays = %v, want %d", decoded.DeletionAfterInactivityDays, testUserInactivityDeletionDays)
@@ -232,10 +278,8 @@ func TestUserValidateRejectsInvalidFields(t *testing.T) {
 		{name: "invalid banner image", mutate: func(u *User) { u.Profile.BannerImage.ContentType = "text/plain" }},
 		{name: "invalid accent color", mutate: func(u *User) { u.Profile.AccentColor = "blue" }},
 		{name: "invalid profile link", mutate: func(u *User) { u.Profile.Links[0].URL = "/relative" }},
-		{name: "invalid contact kind", mutate: func(u *User) {
-			u.Profile.Contacts[0].Kind = UserProfileContactKind("fax")
-		}},
-		{name: "sms contact with tel scheme", mutate: func(u *User) { u.Profile.Contacts[0].URI = "tel:+15035551212" }},
+		{name: "missing contact kind", mutate: func(u *User) { u.Profile.Contacts[0].Kind = "" }},
+		{name: "invalid mobile contact", mutate: func(u *User) { u.Profile.Contacts[0].Value = "503-555-1212" }},
 		{name: "client app for other user", mutate: func(u *User) { u.ClientApps[0].UserID = testVehicleID }},
 	}
 
@@ -643,10 +687,10 @@ func validUser() User {
 			},
 			Contacts: []UserProfileContact{
 				{
-					Kind:        UserProfileContactSMS,
+					Kind:        UserProfileContactMobileNumber,
 					Label:       "Text me",
 					DisplayText: "+1 503 555 1212",
-					URI:         "sms:+15035551212",
+					Value:       "+15035551212",
 					Verified:    true,
 				},
 			},
