@@ -112,6 +112,12 @@ implementation test, or conformance fixture. Use `ParseUUID` when accepting a
 UUID from text, configuration, a command-line flag, or another non-JSON boundary.
 The normal client/server wire path is JSON marshaling and unmarshaling.
 
+Servers advertise the journey lifecycle policies they allow through
+`ServerPolicy.JourneyPolicies`. A client selects one of those profiles when
+creating a journey, and the created journey carries a `JourneyPolicy` snapshot
+with concrete `ActiveExpiresAt`, `DownloadUntil`, `PurgeAt`, or `RetainForever`
+semantics resolved by the server.
+
 For a one-person private-message invite, use `JourneyInviteSingleUse` and
 `JourneyInviteIndividualAudience`. For a link posted to a group chat or web
 forum, use `JourneyInviteMultiUse`, optionally capped with `MaxUses`. `WebURL`
@@ -123,8 +129,8 @@ OpenCaravan client app.
 
 The package currently includes draft types for:
 
-- server policy and retention capability advertisements
-- per-journey policy snapshots
+- server policy and journey lifecycle profile advertisements
+- per-journey lifecycle policy snapshots
 - private invite-only journeys, segments, human participants, client apps, and
   vehicles
 - portable journey invites with single-use and multi-use token semantics,

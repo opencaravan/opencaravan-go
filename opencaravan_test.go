@@ -77,6 +77,173 @@ func TestRegistrationModeValid(t *testing.T) {
 	}
 }
 
+func TestJourneyRetentionModeValid(t *testing.T) {
+	tests := []struct {
+		name string
+		mode JourneyRetentionMode
+		want bool
+	}{
+		{name: "ephemeral", mode: JourneyRetentionEphemeral, want: true},
+		{name: "download window", mode: JourneyRetentionDownloadWindow, want: true},
+		{name: "forever", mode: JourneyRetentionForever, want: true},
+		{name: "unknown", mode: JourneyRetentionMode("unknown"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mode.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestServerPolicyValidate(t *testing.T) {
+	valid := validServerPolicy()
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*ServerPolicy)
+	}{
+		{name: "missing protocol version", mutate: func(p *ServerPolicy) { p.ProtocolVersion = "" }},
+		{name: "missing server url", mutate: func(p *ServerPolicy) { p.ServerURL = "" }},
+		{name: "unknown registration mode", mutate: func(p *ServerPolicy) { p.RegistrationMode = RegistrationMode("unknown") }},
+		{name: "no journey policies", mutate: func(p *ServerPolicy) { p.JourneyPolicies = nil }},
+		{name: "duplicate policy id", mutate: func(p *ServerPolicy) {
+			p.JourneyPolicies[1].ID = p.JourneyPolicies[0].ID
+		}},
+		{name: "missing default policy", mutate: func(p *ServerPolicy) { p.DefaultJourneyPolicyID = "missing" }},
+		{name: "ephemeral profile with download window", mutate: func(p *ServerPolicy) {
+			p.JourneyPolicies[0].MaxDownloadWindow = "24h"
+		}},
+		{name: "ephemeral profile with export", mutate: func(p *ServerPolicy) {
+			p.JourneyPolicies[0].ExportSupported = true
+		}},
+		{name: "download-window profile without export", mutate: func(p *ServerPolicy) {
+			p.JourneyPolicies[1].ExportSupported = false
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := valid
+			policy.JourneyPolicies = append([]JourneyPolicyProfile(nil), valid.JourneyPolicies...)
+			tt.mutate(&policy)
+			if err := policy.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestJourneyPolicyValidate(t *testing.T) {
+	activeExpiresAt := time.Date(2026, 5, 24, 18, 0, 0, 0, time.UTC)
+	downloadUntil := time.Date(2026, 5, 31, 18, 0, 0, 0, time.UTC)
+	purgeAt := time.Date(2026, 6, 1, 18, 0, 0, 0, time.UTC)
+
+	valid := JourneyPolicy{
+		PolicyID:        "public-download-7d",
+		PolicyHash:      "sha256:abc",
+		RetentionMode:   JourneyRetentionDownloadWindow,
+		ActiveExpiresAt: &activeExpiresAt,
+		DownloadUntil:   &downloadUntil,
+		PurgeAt:         &purgeAt,
+		ExportSupported: true,
+		MediaAllowed:    true,
+	}
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	ephemeral := JourneyPolicy{
+		PolicyID:      "public-ephemeral",
+		PolicyHash:    "sha256:def",
+		RetentionMode: JourneyRetentionEphemeral,
+		PurgeAt:       &purgeAt,
+	}
+	if err := ephemeral.Validate(); err != nil {
+		t.Fatalf("ephemeral Validate() error = %v", err)
+	}
+
+	forever := JourneyPolicy{
+		PolicyID:        "private-forever",
+		PolicyHash:      "sha256:ghi",
+		RetentionMode:   JourneyRetentionForever,
+		RetainForever:   true,
+		ExportSupported: true,
+	}
+	if err := forever.Validate(); err != nil {
+		t.Fatalf("forever Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*JourneyPolicy)
+	}{
+		{name: "missing policy id", mutate: func(p *JourneyPolicy) { p.PolicyID = "" }},
+		{name: "missing policy hash", mutate: func(p *JourneyPolicy) { p.PolicyHash = "" }},
+		{name: "zero active expiration", mutate: func(p *JourneyPolicy) { p.ActiveExpiresAt = ptr(time.Time{}) }},
+		{name: "purge before download", mutate: func(p *JourneyPolicy) {
+			beforeDownload := downloadUntil.Add(-time.Hour)
+			p.PurgeAt = &beforeDownload
+		}},
+		{name: "download window without download until", mutate: func(p *JourneyPolicy) { p.DownloadUntil = nil }},
+		{name: "download window without purge", mutate: func(p *JourneyPolicy) { p.PurgeAt = nil }},
+		{name: "download window without export", mutate: func(p *JourneyPolicy) { p.ExportSupported = false }},
+		{name: "ephemeral without purge", mutate: func(p *JourneyPolicy) {
+			p.RetentionMode = JourneyRetentionEphemeral
+			p.DownloadUntil = nil
+			p.PurgeAt = nil
+		}},
+		{name: "ephemeral retaining forever", mutate: func(p *JourneyPolicy) {
+			p.RetentionMode = JourneyRetentionEphemeral
+			p.DownloadUntil = nil
+			p.RetainForever = true
+		}},
+		{name: "ephemeral with download until", mutate: func(p *JourneyPolicy) {
+			p.RetentionMode = JourneyRetentionEphemeral
+		}},
+		{name: "ephemeral with export", mutate: func(p *JourneyPolicy) {
+			p.RetentionMode = JourneyRetentionEphemeral
+			p.DownloadUntil = nil
+			p.ExportSupported = true
+		}},
+		{name: "forever without retain flag", mutate: func(p *JourneyPolicy) {
+			p.RetentionMode = JourneyRetentionForever
+			p.DownloadUntil = nil
+			p.PurgeAt = nil
+			p.RetainForever = false
+		}},
+		{name: "forever with purge", mutate: func(p *JourneyPolicy) {
+			p.RetentionMode = JourneyRetentionForever
+			p.DownloadUntil = nil
+			p.RetainForever = true
+		}},
+		{name: "forever without export", mutate: func(p *JourneyPolicy) {
+			p.RetentionMode = JourneyRetentionForever
+			p.DownloadUntil = nil
+			p.PurgeAt = nil
+			p.RetainForever = true
+			p.ExportSupported = false
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := valid
+			tt.mutate(&policy)
+			if err := policy.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
 func TestNewJourneyInviteToken(t *testing.T) {
 	expiresAt := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 
@@ -355,6 +522,43 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 		Signature: "base64url-signature",
 	}
 	return invite
+}
+
+func validServerPolicy() ServerPolicy {
+	return ServerPolicy{
+		ProtocolVersion:        ProtocolVersion,
+		ServerURL:              "https://public.spivot.net",
+		DisplayName:            "Public Spivot",
+		RegistrationMode:       RegistrationOpen,
+		DefaultJourneyPolicyID: "public-ephemeral",
+		JourneyPolicies: []JourneyPolicyProfile{
+			{
+				ID:                "public-ephemeral",
+				DisplayName:       "Ephemeral",
+				Description:       "Hard-purge journey data after the drive ends.",
+				RetentionMode:     JourneyRetentionEphemeral,
+				MaxActiveLifetime: "24h",
+				ExportSupported:   false,
+				MediaAllowed:      false,
+			},
+			{
+				ID:                "public-download-7d",
+				DisplayName:       "Seven-day download",
+				RetentionMode:     JourneyRetentionDownloadWindow,
+				MaxActiveLifetime: "24h",
+				MaxDownloadWindow: "168h",
+				ExportSupported:   true,
+				MediaAllowed:      true,
+			},
+			{
+				ID:              "private-forever",
+				DisplayName:     "Forever",
+				RetentionMode:   JourneyRetentionForever,
+				ExportSupported: true,
+				MediaAllowed:    true,
+			},
+		},
+	}
 }
 
 func ptr[T any](value T) *T {
