@@ -70,21 +70,30 @@ malformed-input cases.
 
 ## Godoc
 
-Godoc is a primary product surface for this module. A developer should be able
-to read the generated docs on pkg.go.dev and understand the OpenCaravan
-vocabulary, lifecycle expectations, wire compatibility rules, and privacy
-implications without spelunking through Spivot Server.
+Godoc is a primary product surface for this module, not commentary on
+the source. An implementer of OpenCaravan in another language should
+be able to read the generated docs on pkg.go.dev and learn the
+protocol vocabulary, the wire-format contracts, identifier-assignment
+authority, lifecycle, and privacy posture without opening any Go file.
 
-Every package and exported const, var, type, field-bearing struct, function,
-method, and interface needs a Godoc comment. Comments must start with the
-exported identifier and read as complete sentences, but that is the floor, not
-the goal. Good comments explain protocol meaning, required versus optional
-fields, who assigns stable identifiers, which fields are policy snapshots, and
-how values should be used across implementations.
+Exported symbols carry that load. Document the protocol meaning, not
+just the Go shape. Package-level docs use Go 1.19+ heading syntax for
+navigable structure; cross-reference with `[Identifier]` doc links;
+add runnable `Example*` tests for primary usage patterns so the docs
+cannot bit-rot.
 
-Enum-like constants should explain the semantic difference between values.
-Examples are welcome when they make protocol usage clearer; prefer small,
-compilable examples that render well on pkg.go.dev.
+Unexported symbols answer a different question: *why is this here in
+its current form?* The test for whether a comment is earning its place:
+
+> If a contributor deleted this symbol in a PR, would the surrounding
+> code make clear why that's wrong?
+
+If no, document the why. If yes, no comment needed.
+
+Godoc is part of the reader-facing interface. A PR that changes
+behavior without updating the affected docs is incomplete, the same
+way a PR that changes a function without updating its tests is
+incomplete.
 
 ## Workflow
 
