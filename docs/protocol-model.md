@@ -245,6 +245,89 @@ OpenCaravan client app. `JourneyInvitePresentation` can carry title, summary,
 avatar, and banner snapshots for rich share surfaces before the client has
 fetched the journey.
 
+## Authentication
+
+OpenCaravan auth is layered. Each layer is independent so implementations can
+swap one piece (transport, encoding, session format) without disturbing the
+others.
+
+1. **Identity (long-lived).** A `ClientApp` generates a P-256 ECDSA keypair
+   locally (Secure Enclave on iOS, Keystore on Android) and submits a CSR via
+   `ClientAppEnrollmentRequest`. The server, acting as a CA, signs a
+   short-lived X.509 certificate and returns it inside a
+   `ClientAppEnrollment` paired with its `ServerCAChain`. The enrollment's
+   `ID` matches the `ClientApp.ID`; they are two faces of the same entity.
+2. **Session (short-lived).** The client presents its certificate over an
+   mTLS-authenticated transport and sends a `SessionRequest` naming the
+   actions and (optional) journey it wants to act within. The server replies
+   with a `SessionResponse` carrying a base64-encoded macaroon whose caveats
+   bound the session in time, scope, and permitted actions.
+3. **Transport.** Implementation choice. The reference Spivot deployment is
+   HTTP/3 over QUIC terminated at a reverse proxy that forwards both mTLS
+   identity and the session macaroon to the server.
+
+### Why P-256 ECDSA
+
+P-256 is the only signature algorithm with universal hardware-backed storage:
+Apple Secure Enclave only supports P-256; Android Keystore supports P-256 on
+every device since API 23; WebAuthn ES256 is P-256. `KeyAlgorithm` is a
+typed string so future algorithms can be added without ambiguity, but
+implementations targeting both mobile platforms should not rely on key types
+beyond P-256 in v1.
+
+### Optional key attestation
+
+`KeyAttestation` is an opaque platform-specific assertion that the client's
+key resides in hardware-backed storage. The protocol declares the slot;
+verification is implementation-level. Known formats are
+`apple-app-attest`, `android-key-attestation`, and `webauthn`, but unknown
+formats pass the protocol-level `Validate` so the slot is forward-compatible
+with platforms that ship attestation schemes after this protocol version.
+Servers may require an attestation of a specific format for high-trust
+scopes.
+
+### Macaroon caveat predicate vocabulary
+
+The macaroon binary format follows the [macaroon
+spec](https://research.google/pubs/macaroons-cookies-with-contextual-caveats-for-decentralized-authorization/);
+OpenCaravan defines only the first-party caveat predicate namespace so any
+implementation that issues, attenuates, or validates session macaroons uses
+the same predicate strings.
+
+| Predicate                  | Meaning                                                                |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `time<T` (RFC3339)         | Macaroon is only valid before `T`                                      |
+| `journey=UUID`             | Macaroon is scoped to a specific journey                               |
+| `user=UUID`                | Macaroon is scoped to a specific user                                  |
+| `client_app=UUID`          | Macaroon is scoped to a specific client app                            |
+| `action=NAME`              | Macaroon permits a specific `SessionAction` (`journey.read`, etc.)     |
+
+Predicates are case-sensitive ASCII without surrounding whitespace. Build via
+`CaveatTimeBefore`, `CaveatJourney`, `CaveatUser`, `CaveatClientApp`, and
+`CaveatAction`; parse via `ParseCaveat`. Unknown predicates parse as
+`CaveatKindUnknown` with `Raw` preserved so attenuation tooling can carry
+them verbatim.
+
+### `SessionAction` extensibility
+
+The initial action set covers the CRUD endpoints planned for v0.0.1:
+`journey.read`, `journey.write`, `telemetry.write`, `media.upload`,
+`invite.create`. New actions may be added in future protocol versions
+following the dotted-namespace pattern. Servers that accept unknown actions
+in a `SessionRequest` should reject the request rather than silently
+omitting them — otherwise the caller gets a session weaker than it expected
+without warning.
+
+### Bootstrap
+
+The first `ClientApp` on a fresh server obtains its `server_registration`
+invite token from the server itself: on first boot, a server that has zero
+registered users emits a single-use `server_registration`-scoped invite to
+its log. The operator copies that token to the first administrator's app,
+which then enrolls via the same `ClientAppEnrollmentRequest` flow as every
+subsequent client. Subsequent `server_registration` invites are issued by
+authenticated admins through the same code path.
+
 ## Package Scope
 
 The package currently includes draft types for:
@@ -261,3 +344,6 @@ The package currently includes draft types for:
   presentation image refs, and web/app link forms
 - participant-shared journey media
 - position telemetry samples
+- client app enrollment (CSR + cert chain), session/macaroon issuance, and
+  the macaroon caveat predicate vocabulary used between protocol
+  implementations
