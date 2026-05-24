@@ -57,8 +57,11 @@ func (r OccupantRole) Valid() bool {
 	}
 }
 
-// VehicleOccupant links a journey participant and one or more client apps to a
-// vehicle during a journey segment.
+// VehicleOccupant links a journey participant to a vehicle during a journey
+// segment, optionally naming the client apps acting on behalf of that
+// participant. An occupant with no client_app_ids is a passenger who is not
+// streaming telemetry from a personal device; an occupant with one or more
+// client_app_ids may submit position samples through any of those apps.
 type VehicleOccupant struct {
 	JourneyParticipantID UUID         `json:"journey_participant_id"`
 	ClientAppIDs         []UUID       `json:"client_app_ids,omitempty"`
