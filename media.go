@@ -25,16 +25,16 @@ const (
 // than one bounded segment. PolicyHash records the server policy document
 // fingerprint that governed sharing when the media was accepted by the server.
 type SharedMedia struct {
-	ID            UUID       `json:"id"`
-	JourneyID     UUID       `json:"journey_id"`
-	SegmentID     *UUID      `json:"segment_id,omitempty"`
-	ParticipantID UUID       `json:"participant_id"`
-	ClientAppID   UUID       `json:"client_app_id"`
-	Type          MediaType  `json:"type"`
-	URL           string     `json:"url"`
-	ContentType   string     `json:"content_type,omitempty"`
-	Caption       string     `json:"caption,omitempty"`
-	PolicyHash    string     `json:"policy_hash"`
-	CaptureTime   *time.Time `json:"capture_time,omitempty"`
-	ShareTime     time.Time  `json:"share_time"`
+	ID                   UUID       `json:"id"`
+	JourneyID            UUID       `json:"journey_id"`
+	SegmentID            *UUID      `json:"segment_id,omitempty"`
+	JourneyParticipantID UUID       `json:"journey_participant_id"`
+	ClientAppID          UUID       `json:"client_app_id"`
+	Type                 MediaType  `json:"type"`
+	URL                  string     `json:"url"`
+	ContentType          string     `json:"content_type,omitempty"`
+	Caption              string     `json:"caption,omitempty"`
+	PolicyHash           string     `json:"policy_hash"`
+	CaptureTime          *time.Time `json:"capture_time,omitempty"`
+	ShareTime            time.Time  `json:"share_time"`
 }

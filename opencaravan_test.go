@@ -12,7 +12,7 @@ const (
 	testSegmentID        UUID = "22222222-2222-4222-8222-222222222222"
 	testSegmentVehicleID UUID = "33333333-3333-4333-8333-333333333333"
 	testVehicleID        UUID = "44444444-4444-4444-8444-444444444444"
-	testParticipantID    UUID = "55555555-5555-4555-8555-555555555555"
+	testUserID           UUID = "55555555-5555-4555-8555-555555555555"
 	testClientAppID      UUID = "66666666-6666-4666-8666-666666666666"
 	testMembershipID     UUID = "77777777-7777-4777-8777-777777777777"
 	testInviteID         UUID = "88888888-8888-4888-8888-888888888888"
@@ -106,6 +106,91 @@ func TestServerPolicyValidate(t *testing.T) {
 			policy := valid
 			tt.mutate(&policy)
 			if err := policy.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestUserProfileContactKindValid(t *testing.T) {
+	tests := []struct {
+		name string
+		kind UserProfileContactKind
+		want bool
+	}{
+		{name: "phone", kind: UserProfileContactPhone, want: true},
+		{name: "sms", kind: UserProfileContactSMS, want: true},
+		{name: "email", kind: UserProfileContactEmail, want: true},
+		{name: "url", kind: UserProfileContactURL, want: true},
+		{name: "other", kind: UserProfileContactOther, want: true},
+		{name: "unknown", kind: UserProfileContactKind("unknown"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.kind.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUserJSONAndValidate(t *testing.T) {
+	user := validUser()
+
+	if err := user.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(user)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded User
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if decoded.ID != testUserID {
+		t.Fatalf("ID = %q, want %q", decoded.ID, testUserID)
+	}
+	if decoded.Profile.DisplayName != "Riley" {
+		t.Fatalf("DisplayName = %q, want Riley", decoded.Profile.DisplayName)
+	}
+	if got := decoded.Profile.Contacts[0].URI; got != "sms:+15035551212" {
+		t.Fatalf("contact URI = %q, want sms:+15035551212", got)
+	}
+}
+
+func TestUserValidateRejectsInvalidFields(t *testing.T) {
+	valid := validUser()
+
+	tests := []struct {
+		name   string
+		mutate func(*User)
+	}{
+		{name: "missing user id", mutate: func(u *User) { u.ID = "" }},
+		{name: "invalid home server url", mutate: func(u *User) { u.HomeServerURL = "not-a-url" }},
+		{name: "missing display name", mutate: func(u *User) { u.Profile.DisplayName = "" }},
+		{name: "invalid avatar url", mutate: func(u *User) { u.Profile.AvatarURL = "not-a-url" }},
+		{name: "invalid accent color", mutate: func(u *User) { u.Profile.AccentColor = "blue" }},
+		{name: "invalid profile link", mutate: func(u *User) { u.Profile.Links[0].URL = "/relative" }},
+		{name: "invalid contact kind", mutate: func(u *User) {
+			u.Profile.Contacts[0].Kind = UserProfileContactKind("fax")
+		}},
+		{name: "sms contact with tel scheme", mutate: func(u *User) { u.Profile.Contacts[0].URI = "tel:+15035551212" }},
+		{name: "client app for other user", mutate: func(u *User) { u.ClientApps[0].UserID = testVehicleID }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			user := valid
+			user.Profile.Links = append([]UserProfileLink(nil), valid.Profile.Links...)
+			user.Profile.Contacts = append([]UserProfileContact(nil), valid.Profile.Contacts...)
+			user.ClientApps = append([]ClientApp(nil), valid.ClientApps...)
+			tt.mutate(&user)
+			if err := user.Validate(); err == nil {
 				t.Fatal("Validate() error = nil, want error")
 			}
 		})
@@ -297,9 +382,9 @@ func TestJourneyInviteValidateRejectsInvalidFields(t *testing.T) {
 
 func TestJourneyParticipantValidate(t *testing.T) {
 	valid := JourneyParticipant{
-		ID:            testMembershipID,
-		JourneyID:     testJourneyID,
-		ParticipantID: testParticipantID,
+		ID:        testMembershipID,
+		JourneyID: testJourneyID,
+		UserID:    testUserID,
 		Privileges: JourneyParticipantPrivileges{
 			CanGenerateInvites: true,
 		},
@@ -316,7 +401,8 @@ func TestJourneyParticipantValidate(t *testing.T) {
 	}{
 		{name: "missing membership id", mutate: func(p *JourneyParticipant) { p.ID = "" }},
 		{name: "missing journey id", mutate: func(p *JourneyParticipant) { p.JourneyID = "" }},
-		{name: "missing participant id", mutate: func(p *JourneyParticipant) { p.ParticipantID = "" }},
+		{name: "missing user id", mutate: func(p *JourneyParticipant) { p.UserID = "" }},
+		{name: "invalid profile", mutate: func(p *JourneyParticipant) { p.Profile = &UserProfile{} }},
 		{name: "missing join time", mutate: func(p *JourneyParticipant) { p.JoinTime = time.Time{} }},
 	}
 
@@ -345,7 +431,7 @@ func TestPositionSampleValidate(t *testing.T) {
 		{name: "missing journey id", mutate: func(s *PositionSample) { s.JourneyID = "" }},
 		{name: "missing segment id", mutate: func(s *PositionSample) { s.SegmentID = "" }},
 		{name: "missing segment vehicle id", mutate: func(s *PositionSample) { s.SegmentVehicleID = "" }},
-		{name: "missing participant id", mutate: func(s *PositionSample) { s.ParticipantID = "" }},
+		{name: "missing journey participant id", mutate: func(s *PositionSample) { s.JourneyParticipantID = "" }},
 		{name: "missing client app id", mutate: func(s *PositionSample) { s.ClientAppID = "" }},
 		{name: "negative sequence", mutate: func(s *PositionSample) { s.ClientSequence = -1 }},
 		{name: "missing capture time", mutate: func(s *PositionSample) { s.CaptureTime = time.Time{} }},
@@ -375,10 +461,10 @@ func TestSegmentVehicleValidate(t *testing.T) {
 		VehicleID: testVehicleID,
 		Occupants: []VehicleOccupant{
 			{
-				ParticipantID: testParticipantID,
-				ClientAppIDs:  []UUID{testClientAppID},
-				Role:          OccupantDriver,
-				JoinTime:      time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+				JourneyParticipantID: testMembershipID,
+				ClientAppIDs:         []UUID{testClientAppID},
+				Role:                 OccupantDriver,
+				JoinTime:             time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
 			},
 		},
 		Tracklog: []PositionSample{validPositionSample()},
@@ -397,7 +483,7 @@ func TestSegmentVehicleValidate(t *testing.T) {
 		{name: "missing vehicle id", mutate: func(v *SegmentVehicle) { v.VehicleID = "" }},
 		{name: "no occupants", mutate: func(v *SegmentVehicle) { v.Occupants = nil }},
 		{name: "unknown occupant role", mutate: func(v *SegmentVehicle) { v.Occupants[0].Role = OccupantRole("pilot") }},
-		{name: "tracklog from non occupant", mutate: func(v *SegmentVehicle) { v.Tracklog[0].ParticipantID = testVehicleID }},
+		{name: "tracklog from non occupant", mutate: func(v *SegmentVehicle) { v.Tracklog[0].JourneyParticipantID = testVehicleID }},
 		{name: "tracklog for other segment vehicle", mutate: func(v *SegmentVehicle) { v.Tracklog[0].SegmentVehicleID = testVehicleID }},
 	}
 
@@ -416,22 +502,62 @@ func TestSegmentVehicleValidate(t *testing.T) {
 
 func validPositionSample() PositionSample {
 	return PositionSample{
-		JourneyID:        testJourneyID,
-		SegmentID:        testSegmentID,
-		SegmentVehicleID: testSegmentVehicleID,
-		ParticipantID:    testParticipantID,
-		ClientAppID:      testClientAppID,
-		ClientSequence:   1,
-		CaptureTime:      time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
-		LatitudeE7:       451234567,
-		LongitudeE7:      -1221234567,
-		HeadingDegreesE2: ptr[int32](35999),
+		JourneyID:            testJourneyID,
+		SegmentID:            testSegmentID,
+		SegmentVehicleID:     testSegmentVehicleID,
+		JourneyParticipantID: testMembershipID,
+		ClientAppID:          testClientAppID,
+		ClientSequence:       1,
+		CaptureTime:          time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+		LatitudeE7:           451234567,
+		LongitudeE7:          -1221234567,
+		HeadingDegreesE2:     ptr[int32](35999),
+	}
+}
+
+func validUser() User {
+	return User{
+		ID:            testUserID,
+		HomeServerURL: "https://public.spivot.net",
+		Profile: UserProfile{
+			DisplayName: "Riley",
+			AvatarURL:   "https://public.spivot.net/users/riley/avatar.png",
+			BannerURL:   "https://public.spivot.net/users/riley/banner.png",
+			Bio:         "Usually somewhere near the back of the convoy.",
+			AccentColor: "#3366cc",
+			Links: []UserProfileLink{
+				{
+					Kind:  "website",
+					Label: "Road notes",
+					URL:   "https://example.com/riley",
+				},
+			},
+			Contacts: []UserProfileContact{
+				{
+					Kind:        UserProfileContactSMS,
+					Label:       "Text me",
+					DisplayText: "+1 503 555 1212",
+					URI:         "sms:+15035551212",
+					Verified:    true,
+				},
+			},
+		},
+		ClientApps: []ClientApp{
+			{
+				ID:       testClientAppID,
+				UserID:   testUserID,
+				Name:     "Spivot",
+				Version:  "0.1.0",
+				Platform: "ios",
+			},
+		},
 	}
 }
 
 func validJourney() Journey {
 	creationTime := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	deletionTime := time.Date(2026, 6, 1, 18, 0, 0, 0, time.UTC)
+	profile := validUser().Profile
 
 	return Journey{
 		ID:              testJourneyID,
@@ -445,9 +571,10 @@ func validJourney() Journey {
 		},
 		Participants: []JourneyParticipant{
 			{
-				ID:            testMembershipID,
-				JourneyID:     testJourneyID,
-				ParticipantID: testParticipantID,
+				ID:        testMembershipID,
+				JourneyID: testJourneyID,
+				UserID:    testUserID,
+				Profile:   &profile,
 				Privileges: JourneyParticipantPrivileges{
 					CanGenerateInvites: true,
 				},
@@ -464,14 +591,14 @@ func validJourney() Journey {
 		},
 		SharedMedia: []SharedMedia{
 			{
-				ID:            testMediaID,
-				JourneyID:     testJourneyID,
-				ParticipantID: testParticipantID,
-				ClientAppID:   testClientAppID,
-				Type:          MediaPhoto,
-				URL:           "https://public.spivot.net/media/99999999-9999-4999-8999-999999999999",
-				PolicyHash:    "sha256:abc",
-				ShareTime:     creationTime,
+				ID:                   testMediaID,
+				JourneyID:            testJourneyID,
+				JourneyParticipantID: testMembershipID,
+				ClientAppID:          testClientAppID,
+				Type:                 MediaPhoto,
+				URL:                  "https://public.spivot.net/media/99999999-9999-4999-8999-999999999999",
+				PolicyHash:           "sha256:abc",
+				ShareTime:            creationTime,
 			},
 		},
 		CreationTime: creationTime,

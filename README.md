@@ -44,6 +44,23 @@ import (
 func main() {
 	creationTime := time.Now()
 	deletionTime := creationTime.Add(7 * 24 * time.Hour)
+	user := opencaravan.User{
+		ID:            serverAssignedID(),
+		HomeServerURL: "https://public.spivot.net",
+		Profile: opencaravan.UserProfile{
+			DisplayName: "Riley",
+			AvatarURL:   "https://public.spivot.net/users/riley/avatar.png",
+			AccentColor: "#3366cc",
+			Contacts: []opencaravan.UserProfileContact{
+				{
+					Kind:        opencaravan.UserProfileContactSMS,
+					Label:       "Text Riley",
+					DisplayText: "+1 503 555 1212",
+					URI:         "sms:+15035551212",
+				},
+			},
+		},
+	}
 	journey := opencaravan.Journey{
 		ID:              serverAssignedID(),
 		OriginServerURL: "https://public.spivot.net",
@@ -60,11 +77,16 @@ func main() {
 	coordinator := opencaravan.JourneyParticipant{
 		ID:            serverAssignedID(),
 		JourneyID:     journey.ID,
-		ParticipantID: serverAssignedID(),
+		UserID:        user.ID,
+		Profile:       &user.Profile,
 		Privileges: opencaravan.JourneyParticipantPrivileges{
 			CanGenerateInvites: true,
 		},
 		JoinTime: creationTime,
+	}
+
+	if err := user.Validate(); err != nil {
+		panic(err)
 	}
 
 	token, err := opencaravan.NewJourneyInviteToken(
@@ -127,6 +149,12 @@ value means the server has not scheduled the journey for deletion. Journey-level
 feature flags such as `ExportAllowed` and `MediaAllowed` describe capabilities
 that clients can render directly.
 
+`User` is the durable server-side identity. `JourneyParticipant` is the
+membership record for one user in one private journey. A journey participant may
+carry a profile projection so clients can render the display name, avatar,
+accent color, public links, and opt-in contact methods that are visible to other
+people sharing the journey.
+
 For a one-person private-message invite, use `JourneyInviteSingleUse` and
 `JourneyInviteIndividualAudience`. For a link posted to a group chat or web
 forum, use `JourneyInviteMultiUse`, optionally capped with `MaxUses`. `WebURL`
@@ -140,8 +168,8 @@ The package currently includes draft types for:
 
 - server policy advertisements
 - per-journey deletion timestamps and feature flags
-- private invite-only journeys, segments, human participants, client apps, and
-  vehicles
+- private invite-only journeys, users, journey participants, client apps,
+  segments, and vehicles
 - portable journey invites with single-use and multi-use token semantics,
   integrity metadata, and web/app link forms
 - participant-shared journey media

@@ -17,7 +17,7 @@ type PositionSample struct {
 	JourneyID              UUID      `json:"journey_id"`
 	SegmentID              UUID      `json:"segment_id"`
 	SegmentVehicleID       UUID      `json:"segment_vehicle_id"`
-	ParticipantID          UUID      `json:"participant_id"`
+	JourneyParticipantID   UUID      `json:"journey_participant_id"`
 	ClientAppID            UUID      `json:"client_app_id"`
 	ClientSequence         int64     `json:"client_sequence"`
 	CaptureTime            time.Time `json:"capture_time"`
@@ -46,8 +46,8 @@ func (s PositionSample) Validate() error {
 	if !s.SegmentVehicleID.Valid() {
 		return errors.New("segment_vehicle_id must be a valid UUID")
 	}
-	if !s.ParticipantID.Valid() {
-		return errors.New("participant_id must be a valid UUID")
+	if !s.JourneyParticipantID.Valid() {
+		return errors.New("journey_participant_id must be a valid UUID")
 	}
 	if !s.ClientAppID.Valid() {
 		return errors.New("client_app_id must be a valid UUID")

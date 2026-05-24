@@ -65,19 +65,20 @@ type JourneyFeatures struct {
 	MediaAllowed  bool `json:"media_allowed"`
 }
 
-// JourneyParticipant describes a human participant attached to one journey.
+// JourneyParticipant describes a user's membership in one journey.
 //
 // Segment vehicle occupants describe who is in a vehicle for a bounded segment.
-// JourneyParticipant describes the journey-level membership and the privileges
-// that membership carries.
+// JourneyParticipant describes the journey-level membership, the optional
+// journey-visible profile projection, and the privileges that membership
+// carries.
 type JourneyParticipant struct {
-	ID            UUID                         `json:"id"`
-	JourneyID     UUID                         `json:"journey_id"`
-	ParticipantID UUID                         `json:"participant_id"`
-	DisplayName   string                       `json:"display_name,omitempty"`
-	Privileges    JourneyParticipantPrivileges `json:"privileges"`
-	JoinTime      time.Time                    `json:"join_time"`
-	LeaveTime     *time.Time                   `json:"leave_time,omitempty"`
+	ID         UUID                         `json:"id"`
+	JourneyID  UUID                         `json:"journey_id"`
+	UserID     UUID                         `json:"user_id"`
+	Profile    *UserProfile                 `json:"profile,omitempty"`
+	Privileges JourneyParticipantPrivileges `json:"privileges"`
+	JoinTime   time.Time                    `json:"join_time"`
+	LeaveTime  *time.Time                   `json:"leave_time,omitempty"`
 }
 
 // JourneyParticipantPrivileges describes what a participant may do within a
@@ -86,29 +87,17 @@ type JourneyParticipantPrivileges struct {
 	CanGenerateInvites bool `json:"can_generate_invites"`
 }
 
-// HumanParticipant describes a person participating in OpenCaravan journeys.
-//
-// A human may run more than one OpenCaravan client app. Segment-level occupant
-// records describe what the human is doing in a particular vehicle at a
-// particular time.
-type HumanParticipant struct {
-	ID          UUID        `json:"id"`
-	DisplayName string      `json:"display_name"`
-	HomeServer  string      `json:"home_server,omitempty"`
-	ClientApps  []ClientApp `json:"client_apps,omitempty"`
-}
-
 // ClientApp describes one OpenCaravan-capable app installation or session
-// acting on behalf of a human participant.
+// acting on behalf of a user.
 type ClientApp struct {
-	ID            UUID       `json:"id"`
-	ParticipantID UUID       `json:"participant_id"`
-	Name          string     `json:"name"`
-	Version       string     `json:"version,omitempty"`
-	Platform      string     `json:"platform,omitempty"`
-	DeviceName    string     `json:"device_name,omitempty"`
-	Capabilities  []string   `json:"capabilities,omitempty"`
-	LastSeenTime  *time.Time `json:"last_seen_time,omitempty"`
+	ID           UUID       `json:"id"`
+	UserID       UUID       `json:"user_id"`
+	Name         string     `json:"name"`
+	Version      string     `json:"version,omitempty"`
+	Platform     string     `json:"platform,omitempty"`
+	DeviceName   string     `json:"device_name,omitempty"`
+	Capabilities []string   `json:"capabilities,omitempty"`
+	LastSeenTime *time.Time `json:"last_seen_time,omitempty"`
 }
 
 // Vehicle describes a physical vehicle that can carry one or more participants
@@ -163,7 +152,7 @@ type SegmentVehicle struct {
 	Tracklog  []PositionSample  `json:"tracklog,omitempty"`
 }
 
-// OccupantRole describes what a human participant is doing in a vehicle during
+// OccupantRole describes what a journey participant is doing in a vehicle during
 // a journey segment.
 type OccupantRole string
 
@@ -188,14 +177,14 @@ func (r OccupantRole) Valid() bool {
 	}
 }
 
-// VehicleOccupant links a human participant and one or more client apps to a
+// VehicleOccupant links a journey participant and one or more client apps to a
 // vehicle during a journey segment.
 type VehicleOccupant struct {
-	ParticipantID UUID         `json:"participant_id"`
-	ClientAppIDs  []UUID       `json:"client_app_ids,omitempty"`
-	Role          OccupantRole `json:"role"`
-	JoinTime      time.Time    `json:"join_time"`
-	LeaveTime     *time.Time   `json:"leave_time,omitempty"`
+	JourneyParticipantID UUID         `json:"journey_participant_id"`
+	ClientAppIDs         []UUID       `json:"client_app_ids,omitempty"`
+	Role                 OccupantRole `json:"role"`
+	JoinTime             time.Time    `json:"join_time"`
+	LeaveTime            *time.Time   `json:"leave_time,omitempty"`
 }
 
 // Validate reports whether journey contains the required identity, immutable
@@ -260,8 +249,8 @@ func (journey Journey) Validate() error {
 	return nil
 }
 
-// Validate reports whether participant has the required journey membership
-// identifiers and join time.
+// Validate reports whether participant has the required journey membership,
+// user identity, optional profile projection, and join time.
 func (participant JourneyParticipant) Validate() error {
 	if !participant.ID.Valid() {
 		return errors.New("journey participant id must be a valid UUID")
@@ -269,11 +258,30 @@ func (participant JourneyParticipant) Validate() error {
 	if !participant.JourneyID.Valid() {
 		return errors.New("journey_id must be a valid UUID")
 	}
-	if !participant.ParticipantID.Valid() {
-		return errors.New("participant_id must be a valid UUID")
+	if !participant.UserID.Valid() {
+		return errors.New("user_id must be a valid UUID")
+	}
+	if participant.Profile != nil {
+		if err := participant.Profile.Validate(); err != nil {
+			return fmt.Errorf("profile: %w", err)
+		}
 	}
 	if participant.JoinTime.IsZero() {
 		return errors.New("join_time must be set")
+	}
+	return nil
+}
+
+// Validate reports whether app has the required app, user, and display fields.
+func (app ClientApp) Validate() error {
+	if !app.ID.Valid() {
+		return errors.New("client app id must be a valid UUID")
+	}
+	if !app.UserID.Valid() {
+		return errors.New("user_id must be a valid UUID")
+	}
+	if app.Name == "" {
+		return errors.New("name must be set")
 	}
 	return nil
 }
@@ -299,7 +307,7 @@ func (vehicle SegmentVehicle) Validate() error {
 		if err := occupant.Validate(); err != nil {
 			return fmt.Errorf("occupant %d: %w", i, err)
 		}
-		participants[occupant.ParticipantID] = struct{}{}
+		participants[occupant.JourneyParticipantID] = struct{}{}
 	}
 	for i, sample := range vehicle.Tracklog {
 		if err := sample.Validate(); err != nil {
@@ -308,8 +316,8 @@ func (vehicle SegmentVehicle) Validate() error {
 		if sample.SegmentVehicleID != vehicle.ID {
 			return fmt.Errorf("tracklog sample %d: segment_vehicle_id does not match vehicle", i)
 		}
-		if _, ok := participants[sample.ParticipantID]; !ok {
-			return fmt.Errorf("tracklog sample %d: participant_id is not an occupant", i)
+		if _, ok := participants[sample.JourneyParticipantID]; !ok {
+			return fmt.Errorf("tracklog sample %d: journey_participant_id is not an occupant", i)
 		}
 	}
 
@@ -319,8 +327,8 @@ func (vehicle SegmentVehicle) Validate() error {
 // Validate reports whether occupant contains a participant, valid role, and
 // join time.
 func (occupant VehicleOccupant) Validate() error {
-	if !occupant.ParticipantID.Valid() {
-		return errors.New("participant id must be a valid UUID")
+	if !occupant.JourneyParticipantID.Valid() {
+		return errors.New("journey participant id must be a valid UUID")
 	}
 	if !occupant.Role.Valid() {
 		return errors.New("occupant role must be a known OpenCaravan value")
