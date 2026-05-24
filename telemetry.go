@@ -20,7 +20,7 @@ type PositionSample struct {
 	ParticipantID          UUID      `json:"participant_id"`
 	ClientAppID            UUID      `json:"client_app_id"`
 	ClientSequence         int64     `json:"client_sequence"`
-	CapturedAt             time.Time `json:"captured_at"`
+	CaptureTime            time.Time `json:"capture_time"`
 	LatitudeE7             int32     `json:"latitude_e7"`
 	LongitudeE7            int32     `json:"longitude_e7"`
 	AltitudeMM             *int64    `json:"altitude_mm,omitempty"`
@@ -55,8 +55,8 @@ func (s PositionSample) Validate() error {
 	if s.ClientSequence < 0 {
 		return errors.New("client sequence must be non-negative")
 	}
-	if s.CapturedAt.IsZero() {
-		return errors.New("captured_at must be set")
+	if s.CaptureTime.IsZero() {
+		return errors.New("capture_time must be set")
 	}
 	if s.LatitudeE7 < minLatitudeE7 || s.LatitudeE7 > maxLatitudeE7 {
 		return errors.New("latitude_e7 out of range")

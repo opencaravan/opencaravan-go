@@ -35,6 +35,6 @@ type SharedMedia struct {
 	ContentType   string     `json:"content_type,omitempty"`
 	Caption       string     `json:"caption,omitempty"`
 	PolicyHash    string     `json:"policy_hash"`
-	CapturedAt    *time.Time `json:"captured_at,omitempty"`
-	SharedAt      time.Time  `json:"shared_at"`
+	CaptureTime   *time.Time `json:"capture_time,omitempty"`
+	ShareTime     time.Time  `json:"share_time"`
 }

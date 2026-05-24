@@ -38,25 +38,25 @@ func (s JourneyState) Valid() bool {
 //
 // Journey is the aggregate representation. APIs may return participants,
 // segments, and media inline for small journeys, or page those collections
-// separately for large retained journeys. DeleteAt is an immutable scheduled
-// hard-deletion timestamp; nil means no scheduled deletion. New participants
-// join through server-issued invite tokens, and invite creation is governed by
+// separately for large retained journeys. DeletionTime is an immutable scheduled
+// hard-deletion time; nil means no scheduled deletion. New participants join
+// through server-issued invite tokens, and invite creation is governed by
 // each attached participant's privileges.
 type Journey struct {
-	ID              UUID                 `json:"id"`
-	OriginServerURL string               `json:"origin_server_url"`
-	Title           string               `json:"title"`
-	Description     string               `json:"description,omitempty"`
-	State           JourneyState         `json:"state"`
-	DeleteAt        *time.Time           `json:"delete_at,omitempty"`
-	Features        JourneyFeatures      `json:"features"`
-	Participants    []JourneyParticipant `json:"participants,omitempty"`
-	Segments        []JourneySegment     `json:"segments,omitempty"`
-	SharedMedia     []SharedMedia        `json:"shared_media,omitempty"`
-	CreatedAt       time.Time            `json:"created_at"`
-	StartsAt        *time.Time           `json:"starts_at,omitempty"`
-	StartedAt       *time.Time           `json:"started_at,omitempty"`
-	ClosedAt        *time.Time           `json:"closed_at,omitempty"`
+	ID               UUID                 `json:"id"`
+	OriginServerURL  string               `json:"origin_server_url"`
+	Title            string               `json:"title"`
+	Description      string               `json:"description,omitempty"`
+	State            JourneyState         `json:"state"`
+	DeletionTime     *time.Time           `json:"deletion_time,omitempty"`
+	Features         JourneyFeatures      `json:"features"`
+	Participants     []JourneyParticipant `json:"participants,omitempty"`
+	Segments         []JourneySegment     `json:"segments,omitempty"`
+	SharedMedia      []SharedMedia        `json:"shared_media,omitempty"`
+	CreationTime     time.Time            `json:"creation_time"`
+	PlannedStartTime *time.Time           `json:"planned_start_time,omitempty"`
+	ActualStartTime  *time.Time           `json:"actual_start_time,omitempty"`
+	TrackingEndTime  *time.Time           `json:"tracking_end_time,omitempty"`
 }
 
 // JourneyFeatures describes optional capabilities enabled for a journey.
@@ -76,8 +76,8 @@ type JourneyParticipant struct {
 	ParticipantID UUID                         `json:"participant_id"`
 	DisplayName   string                       `json:"display_name,omitempty"`
 	Privileges    JourneyParticipantPrivileges `json:"privileges"`
-	JoinedAt      time.Time                    `json:"joined_at"`
-	LeftAt        *time.Time                   `json:"left_at,omitempty"`
+	JoinTime      time.Time                    `json:"join_time"`
+	LeaveTime     *time.Time                   `json:"leave_time,omitempty"`
 }
 
 // JourneyParticipantPrivileges describes what a participant may do within a
@@ -108,7 +108,7 @@ type ClientApp struct {
 	Platform      string     `json:"platform,omitempty"`
 	DeviceName    string     `json:"device_name,omitempty"`
 	Capabilities  []string   `json:"capabilities,omitempty"`
-	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
+	LastSeenTime  *time.Time `json:"last_seen_time,omitempty"`
 }
 
 // Vehicle describes a physical vehicle that can carry one or more participants
@@ -150,8 +150,8 @@ type JourneySegment struct {
 	Name      string           `json:"name,omitempty"`
 	State     SegmentState     `json:"state"`
 	Vehicles  []SegmentVehicle `json:"vehicles,omitempty"`
-	StartedAt time.Time        `json:"started_at"`
-	EndedAt   *time.Time       `json:"ended_at,omitempty"`
+	StartTime time.Time        `json:"start_time"`
+	EndTime   *time.Time       `json:"end_time,omitempty"`
 }
 
 // SegmentVehicle describes one vehicle's participation in a journey segment.
@@ -194,8 +194,8 @@ type VehicleOccupant struct {
 	ParticipantID UUID         `json:"participant_id"`
 	ClientAppIDs  []UUID       `json:"client_app_ids,omitempty"`
 	Role          OccupantRole `json:"role"`
-	JoinedAt      time.Time    `json:"joined_at"`
-	LeftAt        *time.Time   `json:"left_at,omitempty"`
+	JoinTime      time.Time    `json:"join_time"`
+	LeaveTime     *time.Time   `json:"leave_time,omitempty"`
 }
 
 // Validate reports whether journey contains the required identity, immutable
@@ -213,23 +213,23 @@ func (journey Journey) Validate() error {
 	if !journey.State.Valid() {
 		return errors.New("state must be a known OpenCaravan value")
 	}
-	if journey.DeleteAt != nil && journey.DeleteAt.IsZero() {
-		return errors.New("delete_at must be a non-zero time")
+	if journey.DeletionTime != nil && journey.DeletionTime.IsZero() {
+		return errors.New("deletion_time must be a non-zero time")
 	}
-	if journey.CreatedAt.IsZero() {
-		return errors.New("created_at must be set")
+	if journey.CreationTime.IsZero() {
+		return errors.New("creation_time must be set")
 	}
-	if journey.DeleteAt != nil && journey.DeleteAt.Before(journey.CreatedAt) {
-		return errors.New("delete_at must not be before created_at")
+	if journey.DeletionTime != nil && journey.DeletionTime.Before(journey.CreationTime) {
+		return errors.New("deletion_time must not be before creation_time")
 	}
-	if journey.StartsAt != nil && journey.StartsAt.IsZero() {
-		return errors.New("starts_at must be a non-zero time")
+	if journey.PlannedStartTime != nil && journey.PlannedStartTime.IsZero() {
+		return errors.New("planned_start_time must be a non-zero time")
 	}
-	if journey.StartedAt != nil && journey.StartedAt.IsZero() {
-		return errors.New("started_at must be a non-zero time")
+	if journey.ActualStartTime != nil && journey.ActualStartTime.IsZero() {
+		return errors.New("actual_start_time must be a non-zero time")
 	}
-	if journey.ClosedAt != nil && journey.ClosedAt.IsZero() {
-		return errors.New("closed_at must be a non-zero time")
+	if journey.TrackingEndTime != nil && journey.TrackingEndTime.IsZero() {
+		return errors.New("tracking_end_time must be a non-zero time")
 	}
 
 	for i, participant := range journey.Participants {
@@ -272,8 +272,8 @@ func (participant JourneyParticipant) Validate() error {
 	if !participant.ParticipantID.Valid() {
 		return errors.New("participant_id must be a valid UUID")
 	}
-	if participant.JoinedAt.IsZero() {
-		return errors.New("joined_at must be set")
+	if participant.JoinTime.IsZero() {
+		return errors.New("join_time must be set")
 	}
 	return nil
 }
@@ -325,8 +325,8 @@ func (occupant VehicleOccupant) Validate() error {
 	if !occupant.Role.Valid() {
 		return errors.New("occupant role must be a known OpenCaravan value")
 	}
-	if occupant.JoinedAt.IsZero() {
-		return errors.New("joined_at must be set")
+	if occupant.JoinTime.IsZero() {
+		return errors.New("join_time must be set")
 	}
 	for i, clientAppID := range occupant.ClientAppIDs {
 		if !clientAppID.Valid() {

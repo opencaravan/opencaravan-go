@@ -81,7 +81,7 @@ type JourneyInvite struct {
 	Token                         JourneyInviteToken         `json:"token"`
 	Audience                      JourneyInviteAudience      `json:"audience"`
 	CreatedByJourneyParticipantID UUID                       `json:"created_by_journey_participant_id"`
-	CreatedAt                     time.Time                  `json:"created_at"`
+	CreationTime                  time.Time                  `json:"creation_time"`
 	PolicyHash                    string                     `json:"policy_hash"`
 	DisplayName                   string                     `json:"display_name,omitempty"`
 	Links                         *JourneyInviteLinks        `json:"links,omitempty"`
@@ -92,10 +92,10 @@ type JourneyInvite struct {
 // JourneyInviteToken is the server-issued secret capability carried by a
 // journey invite.
 type JourneyInviteToken struct {
-	Value     string               `json:"value"`
-	UseMode   JourneyInviteUseMode `json:"use_mode"`
-	MaxUses   int                  `json:"max_uses,omitempty"`
-	ExpiresAt time.Time            `json:"expires_at"`
+	Value          string               `json:"value"`
+	UseMode        JourneyInviteUseMode `json:"use_mode"`
+	MaxUses        int                  `json:"max_uses,omitempty"`
+	ExpirationTime time.Time            `json:"expiration_time"`
 }
 
 // JourneyInviteLinks describes the URL forms an app or server can use to
@@ -130,12 +130,12 @@ type JourneyInviteIntegrity struct {
 // The token value contains 256 bits of randomness encoded as unpadded base64url
 // text so it can travel safely in URLs, QR codes, JSON, and platform share
 // payloads.
-func NewJourneyInviteToken(useMode JourneyInviteUseMode, expiresAt time.Time) (JourneyInviteToken, error) {
+func NewJourneyInviteToken(useMode JourneyInviteUseMode, expirationTime time.Time) (JourneyInviteToken, error) {
 	if !useMode.Valid() {
 		return JourneyInviteToken{}, errors.New("invite token use mode must be a known OpenCaravan value")
 	}
-	if expiresAt.IsZero() {
-		return JourneyInviteToken{}, errors.New("invite token expires_at must be set")
+	if expirationTime.IsZero() {
+		return JourneyInviteToken{}, errors.New("invite token expiration_time must be set")
 	}
 
 	b := make([]byte, journeyInviteTokenBytes)
@@ -144,9 +144,9 @@ func NewJourneyInviteToken(useMode JourneyInviteUseMode, expiresAt time.Time) (J
 	}
 
 	token := JourneyInviteToken{
-		Value:     base64.RawURLEncoding.EncodeToString(b),
-		UseMode:   useMode,
-		ExpiresAt: expiresAt,
+		Value:          base64.RawURLEncoding.EncodeToString(b),
+		UseMode:        useMode,
+		ExpirationTime: expirationTime,
 	}
 	if useMode == JourneyInviteSingleUse {
 		token.MaxUses = 1
@@ -193,8 +193,8 @@ func (invite JourneyInvite) Validate() error {
 	if !invite.CreatedByJourneyParticipantID.Valid() {
 		return errors.New("created_by_journey_participant_id must be a valid UUID")
 	}
-	if invite.CreatedAt.IsZero() {
-		return errors.New("created_at must be set")
+	if invite.CreationTime.IsZero() {
+		return errors.New("creation_time must be set")
 	}
 	if invite.PolicyHash == "" {
 		return errors.New("policy_hash must be set")
@@ -237,8 +237,8 @@ func (token JourneyInviteToken) Validate() error {
 			return errors.New("multi-use invite token max_uses must be 0 or greater than 1")
 		}
 	}
-	if token.ExpiresAt.IsZero() {
-		return errors.New("invite token expires_at must be set")
+	if token.ExpirationTime.IsZero() {
+		return errors.New("invite token expiration_time must be set")
 	}
 	return nil
 }

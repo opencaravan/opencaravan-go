@@ -42,19 +42,19 @@ import (
 )
 
 func main() {
-	createdAt := time.Now()
-	deleteAt := createdAt.Add(7 * 24 * time.Hour)
+	creationTime := time.Now()
+	deletionTime := creationTime.Add(7 * 24 * time.Hour)
 	journey := opencaravan.Journey{
 		ID:              serverAssignedID(),
 		OriginServerURL: "https://public.spivot.net",
 		Title:           "Sunday Ridge Drive",
 		State:           opencaravan.JourneyPlanned,
-		DeleteAt:        &deleteAt,
+		DeletionTime:    &deletionTime,
 		Features: opencaravan.JourneyFeatures{
 			ExportAllowed: true,
 			MediaAllowed:  true,
 		},
-		CreatedAt:       createdAt,
+		CreationTime:    creationTime,
 	}
 
 	coordinator := opencaravan.JourneyParticipant{
@@ -64,7 +64,7 @@ func main() {
 		Privileges: opencaravan.JourneyParticipantPrivileges{
 			CanGenerateInvites: true,
 		},
-		JoinedAt: createdAt,
+		JoinTime: creationTime,
 	}
 
 	token, err := opencaravan.NewJourneyInviteToken(
@@ -84,7 +84,7 @@ func main() {
 	invite.ID = serverAssignedID()
 	invite.Audience = opencaravan.JourneyInviteGroupAudience
 	invite.CreatedByJourneyParticipantID = coordinator.ID
-	invite.CreatedAt = createdAt
+	invite.CreationTime = creationTime
 	invite.PolicyHash = "sha256:..."
 	invite.DisplayName = journey.Title
 	invite.Links = &opencaravan.JourneyInviteLinks{
@@ -122,7 +122,7 @@ implementation test, or conformance fixture. Use `ParseUUID` when accepting a
 UUID from text, configuration, a command-line flag, or another non-JSON boundary.
 The normal client/server wire path is JSON marshaling and unmarshaling.
 
-`Journey.DeleteAt` is the immutable scheduled hard-deletion timestamp. A nil
+`Journey.DeletionTime` is the immutable scheduled hard-deletion time. A nil
 value means the server has not scheduled the journey for deletion. Journey-level
 feature flags such as `ExportAllowed` and `MediaAllowed` describe capabilities
 that clients can render directly.

@@ -143,7 +143,7 @@ func TestJourneyValidate(t *testing.T) {
 	}
 
 	forever := valid
-	forever.DeleteAt = nil
+	forever.DeletionTime = nil
 	if err := forever.Validate(); err != nil {
 		t.Fatalf("forever Validate() error = %v", err)
 	}
@@ -156,13 +156,13 @@ func TestJourneyValidate(t *testing.T) {
 		{name: "missing origin server", mutate: func(j *Journey) { j.OriginServerURL = "" }},
 		{name: "missing title", mutate: func(j *Journey) { j.Title = "" }},
 		{name: "unknown state", mutate: func(j *Journey) { j.State = JourneyState("unknown") }},
-		{name: "zero delete at", mutate: func(j *Journey) { j.DeleteAt = ptr(time.Time{}) }},
-		{name: "missing created at", mutate: func(j *Journey) { j.CreatedAt = time.Time{} }},
-		{name: "delete before created", mutate: func(j *Journey) {
-			beforeCreated := j.CreatedAt.Add(-time.Minute)
-			j.DeleteAt = &beforeCreated
+		{name: "zero deletion time", mutate: func(j *Journey) { j.DeletionTime = ptr(time.Time{}) }},
+		{name: "missing creation time", mutate: func(j *Journey) { j.CreationTime = time.Time{} }},
+		{name: "deletion before creation", mutate: func(j *Journey) {
+			beforeCreation := j.CreationTime.Add(-time.Minute)
+			j.DeletionTime = &beforeCreation
 		}},
-		{name: "zero starts at", mutate: func(j *Journey) { j.StartsAt = ptr(time.Time{}) }},
+		{name: "zero planned start time", mutate: func(j *Journey) { j.PlannedStartTime = ptr(time.Time{}) }},
 		{name: "participant for other journey", mutate: func(j *Journey) { j.Participants[0].JourneyID = testVehicleID }},
 		{name: "segment for other journey", mutate: func(j *Journey) { j.Segments[0].JourneyID = testVehicleID }},
 		{name: "media for other journey", mutate: func(j *Journey) { j.SharedMedia[0].JourneyID = testVehicleID }},
@@ -183,9 +183,9 @@ func TestJourneyValidate(t *testing.T) {
 }
 
 func TestNewJourneyInviteToken(t *testing.T) {
-	expiresAt := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	expirationTime := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 
-	singleUse, err := NewJourneyInviteToken(JourneyInviteSingleUse, expiresAt)
+	singleUse, err := NewJourneyInviteToken(JourneyInviteSingleUse, expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
@@ -203,7 +203,7 @@ func TestNewJourneyInviteToken(t *testing.T) {
 		t.Fatalf("decoded token length = %d, want %d", len(tokenBytes), journeyInviteTokenBytes)
 	}
 
-	multiUse, err := NewJourneyInviteToken(JourneyInviteMultiUse, expiresAt)
+	multiUse, err := NewJourneyInviteToken(JourneyInviteMultiUse, expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
@@ -211,11 +211,11 @@ func TestNewJourneyInviteToken(t *testing.T) {
 		t.Fatalf("MaxUses = %d, want 0 for uncapped multi-use", multiUse.MaxUses)
 	}
 
-	if _, err := NewJourneyInviteToken(JourneyInviteUseMode("unknown"), expiresAt); err == nil {
+	if _, err := NewJourneyInviteToken(JourneyInviteUseMode("unknown"), expirationTime); err == nil {
 		t.Fatal("NewJourneyInviteToken() error = nil, want invalid use mode error")
 	}
 	if _, err := NewJourneyInviteToken(JourneyInviteSingleUse, time.Time{}); err == nil {
-		t.Fatal("NewJourneyInviteToken() error = nil, want missing expires_at error")
+		t.Fatal("NewJourneyInviteToken() error = nil, want missing expiration_time error")
 	}
 }
 
@@ -303,7 +303,7 @@ func TestJourneyParticipantValidate(t *testing.T) {
 		Privileges: JourneyParticipantPrivileges{
 			CanGenerateInvites: true,
 		},
-		JoinedAt: time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+		JoinTime: time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
 	}
 
 	if err := valid.Validate(); err != nil {
@@ -317,7 +317,7 @@ func TestJourneyParticipantValidate(t *testing.T) {
 		{name: "missing membership id", mutate: func(p *JourneyParticipant) { p.ID = "" }},
 		{name: "missing journey id", mutate: func(p *JourneyParticipant) { p.JourneyID = "" }},
 		{name: "missing participant id", mutate: func(p *JourneyParticipant) { p.ParticipantID = "" }},
-		{name: "missing joined at", mutate: func(p *JourneyParticipant) { p.JoinedAt = time.Time{} }},
+		{name: "missing join time", mutate: func(p *JourneyParticipant) { p.JoinTime = time.Time{} }},
 	}
 
 	for _, tt := range tests {
@@ -348,7 +348,7 @@ func TestPositionSampleValidate(t *testing.T) {
 		{name: "missing participant id", mutate: func(s *PositionSample) { s.ParticipantID = "" }},
 		{name: "missing client app id", mutate: func(s *PositionSample) { s.ClientAppID = "" }},
 		{name: "negative sequence", mutate: func(s *PositionSample) { s.ClientSequence = -1 }},
-		{name: "missing captured time", mutate: func(s *PositionSample) { s.CapturedAt = time.Time{} }},
+		{name: "missing capture time", mutate: func(s *PositionSample) { s.CaptureTime = time.Time{} }},
 		{name: "latitude too low", mutate: func(s *PositionSample) { s.LatitudeE7 = -900000001 }},
 		{name: "latitude too high", mutate: func(s *PositionSample) { s.LatitudeE7 = 900000001 }},
 		{name: "longitude too low", mutate: func(s *PositionSample) { s.LongitudeE7 = -1800000001 }},
@@ -378,7 +378,7 @@ func TestSegmentVehicleValidate(t *testing.T) {
 				ParticipantID: testParticipantID,
 				ClientAppIDs:  []UUID{testClientAppID},
 				Role:          OccupantDriver,
-				JoinedAt:      time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+				JoinTime:      time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
 			},
 		},
 		Tracklog: []PositionSample{validPositionSample()},
@@ -422,7 +422,7 @@ func validPositionSample() PositionSample {
 		ParticipantID:    testParticipantID,
 		ClientAppID:      testClientAppID,
 		ClientSequence:   1,
-		CapturedAt:       time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+		CaptureTime:      time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
 		LatitudeE7:       451234567,
 		LongitudeE7:      -1221234567,
 		HeadingDegreesE2: ptr[int32](35999),
@@ -430,15 +430,15 @@ func validPositionSample() PositionSample {
 }
 
 func validJourney() Journey {
-	createdAt := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
-	deleteAt := time.Date(2026, 6, 1, 18, 0, 0, 0, time.UTC)
+	creationTime := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	deletionTime := time.Date(2026, 6, 1, 18, 0, 0, 0, time.UTC)
 
 	return Journey{
 		ID:              testJourneyID,
 		OriginServerURL: "https://public.spivot.net",
 		Title:           "Sunday Ridge Drive",
 		State:           JourneyPlanned,
-		DeleteAt:        &deleteAt,
+		DeletionTime:    &deletionTime,
 		Features: JourneyFeatures{
 			ExportAllowed: true,
 			MediaAllowed:  true,
@@ -451,7 +451,7 @@ func validJourney() Journey {
 				Privileges: JourneyParticipantPrivileges{
 					CanGenerateInvites: true,
 				},
-				JoinedAt: createdAt,
+				JoinTime: creationTime,
 			},
 		},
 		Segments: []JourneySegment{
@@ -459,7 +459,7 @@ func validJourney() Journey {
 				ID:        testSegmentID,
 				JourneyID: testJourneyID,
 				State:     SegmentPlanned,
-				StartedAt: createdAt,
+				StartTime: creationTime,
 			},
 		},
 		SharedMedia: []SharedMedia{
@@ -471,18 +471,18 @@ func validJourney() Journey {
 				Type:          MediaPhoto,
 				URL:           "https://public.spivot.net/media/99999999-9999-4999-8999-999999999999",
 				PolicyHash:    "sha256:abc",
-				SharedAt:      createdAt,
+				ShareTime:     creationTime,
 			},
 		},
-		CreatedAt: createdAt,
+		CreationTime: creationTime,
 	}
 }
 
 func validJourneyInvite(t *testing.T) JourneyInvite {
 	t.Helper()
 
-	expiresAt := time.Date(2026, 5, 24, 12, 30, 0, 0, time.UTC)
-	token, err := NewJourneyInviteToken(JourneyInviteMultiUse, expiresAt)
+	expirationTime := time.Date(2026, 5, 24, 12, 30, 0, 0, time.UTC)
+	token, err := NewJourneyInviteToken(JourneyInviteMultiUse, expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
@@ -492,7 +492,7 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 	invite.ID = testInviteID
 	invite.Audience = JourneyInviteGroupAudience
 	invite.CreatedByJourneyParticipantID = testMembershipID
-	invite.CreatedAt = time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	invite.CreationTime = time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	invite.PolicyHash = "sha256:abc"
 	invite.DisplayName = "Sunday Ridge Drive"
 	invite.Links = &JourneyInviteLinks{
