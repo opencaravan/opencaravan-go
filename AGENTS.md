@@ -70,21 +70,82 @@ malformed-input cases.
 
 ## Godoc
 
-Godoc is a primary product surface for this module. A developer should be able
-to read the generated docs on pkg.go.dev and understand the OpenCaravan
-vocabulary, lifecycle expectations, wire compatibility rules, and privacy
-implications without spelunking through Spivot Server.
+Godoc is a primary product surface for this module, not code commentary.
+Two audiences, two bars:
 
-Every package and exported const, var, type, field-bearing struct, function,
-method, and interface needs a Godoc comment. Comments must start with the
-exported identifier and read as complete sentences, but that is the floor, not
-the goal. Good comments explain protocol meaning, required versus optional
-fields, who assigns stable identifiers, which fields are policy snapshots, and
-how values should be used across implementations.
+- A developer landing on [pkg.go.dev](https://pkg.go.dev) (or running
+  `go doc`) should be able to understand the OpenCaravan vocabulary,
+  lifecycle expectations, wire compatibility rules, and privacy
+  implications without spelunking through any reference implementation.
+- A developer navigating the source should understand *why* each
+  unexported helper exists in its current form, especially where the
+  obvious naive implementation would be wrong.
 
-Enum-like constants should explain the semantic difference between values.
-Examples are welcome when they make protocol usage clearer; prefer small,
-compilable examples that render well on pkg.go.dev.
+Godoc is part of the reader-facing interface. A PR that changes
+behavior without updating the affected doc comments is incomplete in
+the same way a PR that changes a function without updating its tests
+is incomplete.
+
+### Exported symbols (full contract)
+
+Every package and exported const, var, type, field-bearing struct,
+function, method, and interface needs a doc comment that:
+
+- Starts with the exported identifier and reads as a complete sentence.
+- States the **protocol meaning**: what the symbol represents in the
+  OpenCaravan vocabulary, not just its Go shape.
+- States **required vs optional** for every field; if absence is
+  semantically different from a zero value, say so explicitly.
+- States **identifier assignment**: who is allowed to mint a new value
+  (server, client, conformance test), when, and via which constructor.
+- States the **wire-compatibility contract**: which fields are
+  versioned, which are extensible, which are immutable once issued.
+- States the **error contract**: which errors are returned when, how to
+  detect sentinels via `errors.Is`, what additional context is wrapped.
+- States the **concurrency** posture where it differs from "trivially
+  safe; immutable after construction."
+- Cross-references related symbols via Go 1.19+ `[Identifier]` doc
+  links so pkg.go.dev produces clickable references.
+
+Enum-like constants explain the semantic difference between values,
+not just the string they serialize to. The wire string is one
+implementation detail; the meaning the value commits the issuer to is
+the contract.
+
+Package-level documentation in `doc.go` (or per-package equivalent)
+uses Go 1.19+ heading syntax (`# Heading`) for a navigable pkg.go.dev
+table of contents. For protocol-bearing packages, structure with
+sections such as Protocol Model, Identifier Rules, Versioning,
+Privacy, and Forward Compatibility.
+
+Add runnable `Example*` functions for the primary usage patterns.
+Examples render on pkg.go.dev and are exercised by `go test`, so they
+cannot bit-rot silently. Use `// Output:` comments to validate the
+deterministic portions. Prefer small, compilable examples that
+demonstrate one wire-format-relevant operation at a time.
+
+### Unexported symbols (rationale, not ceremony)
+
+The reader of an unexported function is always reading the source, with
+the body in front of them. Document the *why*, not the *what*. The
+test for whether a comment is doing real work:
+
+> If a contributor were to delete this unexported symbol in a PR,
+> would the surrounding code make clear why that's wrong?
+
+If yes, a short comment or none is fine. If no, the comment is doing
+real work and must exist.
+
+Rich docs are warranted on unexported symbols when they encode subtle
+invariants the body doesn't show, exist because of a specific bug or
+edge case (the obvious naive implementation is wrong), embody a
+protocol-level or security policy (validation alphabets, canonical
+encodings, hash algorithm choices), or sit at an internal layer
+boundary where the correct sequence of primitive operations lives.
+
+Skip ceremonial docs on one-liners where the signature carries the
+meaning, pure formatting or conversion helpers, test helpers, and code
+that exists purely to reduce duplication with no novel logic.
 
 ## Workflow
 
