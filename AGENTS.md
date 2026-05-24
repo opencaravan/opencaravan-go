@@ -21,11 +21,32 @@ Run `just ci` before pushing.
 - Do not add third-party dependencies without a clear protocol-level reason.
 - Keep this module protocol-focused. Storage engines, server internals, auth
   persistence, and deployment tooling belong in implementations.
-- Exported symbols need Godoc comments that start with the symbol name and read
-  as complete sentences.
 - Use explicit JSON tags on wire-facing structs.
 - Avoid committing protocol semantics that are still speculative. Use narrow,
   composable types and validation helpers.
+
+## Godoc Expectations
+
+Godoc is a primary product surface for this module. Treat documentation with the
+same care as wire compatibility: downstream implementers should be able to read
+the generated package docs and understand the OpenCaravan vocabulary without
+digging through Spivot Server internals.
+
+- Every package needs a package comment.
+- Every exported const, var, type, field-bearing struct, function, method, and
+  interface needs a Godoc comment.
+- Comments must start with the exported identifier and read as complete
+  sentences.
+- Comments should explain protocol meaning, lifecycle expectations, privacy or
+  interoperability implications, and valid usage. Do not merely restate the type
+  signature.
+- Enum-like constants should document the semantic difference between values,
+  not just expand the identifier.
+- Wire-facing structs should document whether fields are required, optional,
+  server-assigned, client-assigned, stable identifiers, policy snapshots, or
+  extension points.
+- Examples are welcome when they make protocol usage clearer. Prefer small,
+  compilable examples that would render well on pkg.go.dev.
 
 ## Git
 
