@@ -250,7 +250,7 @@ func (journey Journey) Validate() error {
 }
 
 // Validate reports whether participant has the required journey membership,
-// user identity, optional profile projection, and join time.
+// server-scoped user ID, optional profile projection, and join time.
 func (participant JourneyParticipant) Validate() error {
 	if !participant.ID.Valid() {
 		return errors.New("journey participant id must be a valid UUID")

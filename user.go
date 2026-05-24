@@ -6,22 +6,23 @@ import (
 	"net/url"
 )
 
-// User describes a durable human identity on an OpenCaravan server.
+// User describes a server-scoped OpenCaravan identity.
 //
-// A user may join many journeys, operate more than one client app, and expose a
-// profile that other participants can view while sharing a journey.
+// Servers assign user IDs per connection or registration. A person may have
+// different user IDs and different profile details on different servers.
 type User struct {
-	ID            UUID        `json:"id"`
-	HomeServerURL string      `json:"home_server_url,omitempty"`
-	Profile       UserProfile `json:"profile"`
-	ClientApps    []ClientApp `json:"client_apps,omitempty"`
+	ID         UUID        `json:"id"`
+	Profile    UserProfile `json:"profile"`
+	ClientApps []ClientApp `json:"client_apps,omitempty"`
 }
 
-// UserProfile describes the profile a user may expose to other journey
-// participants.
+// UserProfile describes client-supplied profile information a server may
+// republish to authorized journey participants.
 //
 // Contacts are explicitly profile-visible. Private account recovery fields,
 // billing data, and server-only authentication metadata do not belong here.
+// Clients may mirror one profile across servers or tailor profile details for
+// each server registration.
 type UserProfile struct {
 	DisplayName string               `json:"display_name"`
 	AvatarURL   string               `json:"avatar_url,omitempty"`
@@ -83,9 +84,6 @@ type UserProfileContact struct {
 func (user User) Validate() error {
 	if !user.ID.Valid() {
 		return errors.New("user id must be a valid UUID")
-	}
-	if user.HomeServerURL != "" && !validAbsoluteURL(user.HomeServerURL) {
-		return errors.New("home_server_url must be an absolute URL")
 	}
 	if err := user.Profile.Validate(); err != nil {
 		return fmt.Errorf("profile: %w", err)

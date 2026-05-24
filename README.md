@@ -45,8 +45,7 @@ func main() {
 	creationTime := time.Now()
 	deletionTime := creationTime.Add(7 * 24 * time.Hour)
 	user := opencaravan.User{
-		ID:            serverAssignedID(),
-		HomeServerURL: "https://public.spivot.net",
+		ID: serverAssignedID(),
 		Profile: opencaravan.UserProfile{
 			DisplayName: "Riley",
 			AvatarURL:   "https://public.spivot.net/users/riley/avatar.png",
@@ -149,11 +148,17 @@ value means the server has not scheduled the journey for deletion. Journey-level
 feature flags such as `ExportAllowed` and `MediaAllowed` describe capabilities
 that clients can render directly.
 
-`User` is the durable server-side identity. `JourneyParticipant` is the
-membership record for one user in one private journey. A journey participant may
-carry a profile projection so clients can render the display name, avatar,
-accent color, public links, and opt-in contact methods that are visible to other
-people sharing the journey.
+`User.ID` is scoped to one server registration. It is not a global person ID and
+should not be used to correlate a person across servers. User-controlled client
+apps supply and maintain profile information for each server registration; a
+server republishes its current view of that profile to authorized journey
+participants. Clients may mirror one profile across servers or tailor profile
+details for each server.
+
+`JourneyParticipant` is the membership record for one server-scoped user in one
+private journey. A journey participant may carry a profile projection so clients
+can render the display name, avatar, accent color, public links, and opt-in
+contact methods that are visible to other people sharing the journey.
 
 For a one-person private-message invite, use `JourneyInviteSingleUse` and
 `JourneyInviteIndividualAudience`. For a link posted to a group chat or web

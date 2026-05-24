@@ -171,7 +171,6 @@ func TestUserValidateRejectsInvalidFields(t *testing.T) {
 		mutate func(*User)
 	}{
 		{name: "missing user id", mutate: func(u *User) { u.ID = "" }},
-		{name: "invalid home server url", mutate: func(u *User) { u.HomeServerURL = "not-a-url" }},
 		{name: "missing display name", mutate: func(u *User) { u.Profile.DisplayName = "" }},
 		{name: "invalid avatar url", mutate: func(u *User) { u.Profile.AvatarURL = "not-a-url" }},
 		{name: "invalid accent color", mutate: func(u *User) { u.Profile.AccentColor = "blue" }},
@@ -517,8 +516,7 @@ func validPositionSample() PositionSample {
 
 func validUser() User {
 	return User{
-		ID:            testUserID,
-		HomeServerURL: "https://public.spivot.net",
+		ID: testUserID,
 		Profile: UserProfile{
 			DisplayName: "Riley",
 			AvatarURL:   "https://public.spivot.net/users/riley/avatar.png",
