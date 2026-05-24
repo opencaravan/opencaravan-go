@@ -16,6 +16,7 @@ const (
 	testClientAppID      UUID = "66666666-6666-4666-8666-666666666666"
 	testMembershipID     UUID = "77777777-7777-4777-8777-777777777777"
 	testInviteID         UUID = "88888888-8888-4888-8888-888888888888"
+	testMediaID          UUID = "99999999-9999-4999-8999-999999999999"
 )
 
 func TestUUIDMarshalTextRequiresCanonicalID(t *testing.T) {
@@ -238,6 +239,66 @@ func TestJourneyPolicyValidate(t *testing.T) {
 			policy := valid
 			tt.mutate(&policy)
 			if err := policy.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestJourneyStateValid(t *testing.T) {
+	tests := []struct {
+		name  string
+		state JourneyState
+		want  bool
+	}{
+		{name: "planned", state: JourneyPlanned, want: true},
+		{name: "active", state: JourneyActive, want: true},
+		{name: "closed", state: JourneyClosed, want: true},
+		{name: "expired", state: JourneyExpired, want: true},
+		{name: "deleted", state: JourneyDeleted, want: true},
+		{name: "unknown", state: JourneyState("unknown"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.state.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestJourneyValidate(t *testing.T) {
+	valid := validJourney()
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Journey)
+	}{
+		{name: "missing journey id", mutate: func(j *Journey) { j.ID = "" }},
+		{name: "missing origin server", mutate: func(j *Journey) { j.OriginServerURL = "" }},
+		{name: "missing title", mutate: func(j *Journey) { j.Title = "" }},
+		{name: "unknown state", mutate: func(j *Journey) { j.State = JourneyState("unknown") }},
+		{name: "invalid policy", mutate: func(j *Journey) { j.Policy.PolicyHash = "" }},
+		{name: "missing created at", mutate: func(j *Journey) { j.CreatedAt = time.Time{} }},
+		{name: "zero starts at", mutate: func(j *Journey) { j.StartsAt = ptr(time.Time{}) }},
+		{name: "participant for other journey", mutate: func(j *Journey) { j.Participants[0].JourneyID = testVehicleID }},
+		{name: "segment for other journey", mutate: func(j *Journey) { j.Segments[0].JourneyID = testVehicleID }},
+		{name: "media for other journey", mutate: func(j *Journey) { j.SharedMedia[0].JourneyID = testVehicleID }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			journey := valid
+			journey.Participants = append([]JourneyParticipant(nil), valid.Participants...)
+			journey.Segments = append([]JourneySegment(nil), valid.Segments...)
+			journey.SharedMedia = append([]SharedMedia(nil), valid.SharedMedia...)
+			tt.mutate(&journey)
+			if err := journey.Validate(); err == nil {
 				t.Fatal("Validate() error = nil, want error")
 			}
 		})
@@ -488,6 +549,62 @@ func validPositionSample() PositionSample {
 		LatitudeE7:       451234567,
 		LongitudeE7:      -1221234567,
 		HeadingDegreesE2: ptr[int32](35999),
+	}
+}
+
+func validJourney() Journey {
+	createdAt := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	activeExpiresAt := time.Date(2026, 5, 24, 18, 0, 0, 0, time.UTC)
+	downloadUntil := time.Date(2026, 5, 31, 18, 0, 0, 0, time.UTC)
+	purgeAt := time.Date(2026, 6, 1, 18, 0, 0, 0, time.UTC)
+
+	return Journey{
+		ID:              testJourneyID,
+		OriginServerURL: "https://public.spivot.net",
+		Title:           "Sunday Ridge Drive",
+		State:           JourneyPlanned,
+		Policy: JourneyPolicy{
+			PolicyID:        "public-download-7d",
+			PolicyHash:      "sha256:abc",
+			RetentionMode:   JourneyRetentionDownloadWindow,
+			ActiveExpiresAt: &activeExpiresAt,
+			DownloadUntil:   &downloadUntil,
+			PurgeAt:         &purgeAt,
+			ExportSupported: true,
+			MediaAllowed:    true,
+		},
+		Participants: []JourneyParticipant{
+			{
+				ID:            testMembershipID,
+				JourneyID:     testJourneyID,
+				ParticipantID: testParticipantID,
+				Privileges: JourneyParticipantPrivileges{
+					CanGenerateInvites: true,
+				},
+				JoinedAt: createdAt,
+			},
+		},
+		Segments: []JourneySegment{
+			{
+				ID:        testSegmentID,
+				JourneyID: testJourneyID,
+				State:     SegmentPlanned,
+				StartedAt: createdAt,
+			},
+		},
+		SharedMedia: []SharedMedia{
+			{
+				ID:            testMediaID,
+				JourneyID:     testJourneyID,
+				ParticipantID: testParticipantID,
+				ClientAppID:   testClientAppID,
+				Type:          MediaPhoto,
+				URL:           "https://public.spivot.net/media/99999999-9999-4999-8999-999999999999",
+				PolicyHash:    "sha256:abc",
+				SharedAt:      createdAt,
+			},
+		},
+		CreatedAt: createdAt,
 	}
 }
 

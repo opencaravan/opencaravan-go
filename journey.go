@@ -23,14 +23,25 @@ const (
 	JourneyDeleted JourneyState = "deleted"
 )
 
+// Valid reports whether the journey state is a known OpenCaravan value.
+func (s JourneyState) Valid() bool {
+	switch s {
+	case JourneyPlanned, JourneyActive, JourneyClosed, JourneyExpired, JourneyDeleted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Journey describes a private, invite-only group drive shared through
 // OpenCaravan.
 //
 // Journey is the aggregate representation. APIs may return participants,
 // segments, and media inline for small journeys, or page those collections
-// separately for large retained journeys. New participants join through
-// server-issued invite tokens, and invite creation is governed by each attached
-// participant's privileges.
+// separately for large retained journeys. Its Policy field is the concrete
+// lifecycle policy snapshot selected from the origin server's advertised policy
+// profiles. New participants join through server-issued invite tokens, and
+// invite creation is governed by each attached participant's privileges.
 type Journey struct {
 	ID              UUID                 `json:"id"`
 	OriginServerURL string               `json:"origin_server_url"`
@@ -178,6 +189,65 @@ type VehicleOccupant struct {
 	Role          OccupantRole `json:"role"`
 	JoinedAt      time.Time    `json:"joined_at"`
 	LeftAt        *time.Time   `json:"left_at,omitempty"`
+}
+
+// Validate reports whether journey contains the required identity, lifecycle
+// policy, timestamps, and aggregate relationships.
+func (journey Journey) Validate() error {
+	if !journey.ID.Valid() {
+		return errors.New("journey id must be a valid UUID")
+	}
+	if journey.OriginServerURL == "" {
+		return errors.New("origin_server_url must be set")
+	}
+	if journey.Title == "" {
+		return errors.New("title must be set")
+	}
+	if !journey.State.Valid() {
+		return errors.New("state must be a known OpenCaravan value")
+	}
+	if err := journey.Policy.Validate(); err != nil {
+		return fmt.Errorf("policy: %w", err)
+	}
+	if journey.CreatedAt.IsZero() {
+		return errors.New("created_at must be set")
+	}
+	if journey.StartsAt != nil && journey.StartsAt.IsZero() {
+		return errors.New("starts_at must be a non-zero time")
+	}
+	if journey.StartedAt != nil && journey.StartedAt.IsZero() {
+		return errors.New("started_at must be a non-zero time")
+	}
+	if journey.ClosedAt != nil && journey.ClosedAt.IsZero() {
+		return errors.New("closed_at must be a non-zero time")
+	}
+
+	for i, participant := range journey.Participants {
+		if err := participant.Validate(); err != nil {
+			return fmt.Errorf("participants[%d]: %w", i, err)
+		}
+		if participant.JourneyID != journey.ID {
+			return fmt.Errorf("participants[%d]: journey_id does not match journey", i)
+		}
+	}
+	for i, segment := range journey.Segments {
+		if !segment.ID.Valid() {
+			return fmt.Errorf("segments[%d]: id must be a valid UUID", i)
+		}
+		if segment.JourneyID != journey.ID {
+			return fmt.Errorf("segments[%d]: journey_id does not match journey", i)
+		}
+	}
+	for i, media := range journey.SharedMedia {
+		if !media.ID.Valid() {
+			return fmt.Errorf("shared_media[%d]: id must be a valid UUID", i)
+		}
+		if media.JourneyID != journey.ID {
+			return fmt.Errorf("shared_media[%d]: journey_id does not match journey", i)
+		}
+	}
+
+	return nil
 }
 
 // Validate reports whether participant has the required journey membership
