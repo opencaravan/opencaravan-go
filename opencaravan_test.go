@@ -62,6 +62,44 @@ func TestUUIDJSONIsStrictAndCanonical(t *testing.T) {
 	}
 }
 
+func TestHexColorParseAndJSON(t *testing.T) {
+	color, err := ParseHexColor("#3366CC")
+	if err != nil {
+		t.Fatalf("ParseHexColor() error = %v", err)
+	}
+	if color != HexColor("#3366cc") {
+		t.Fatalf("ParseHexColor() = %q, want #3366cc", color)
+	}
+
+	encoded, err := json.Marshal(HexColor("#AABBCC"))
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if got, want := string(encoded), `"#aabbcc"`; got != want {
+		t.Fatalf("Marshal() = %s, want %s", got, want)
+	}
+
+	var decoded HexColor
+	if err := json.Unmarshal([]byte(`"#ABCDEF"`), &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if decoded != HexColor("#abcdef") {
+		t.Fatalf("decoded color = %q, want #abcdef", decoded)
+	}
+
+	for _, value := range []string{"3366cc", "#3366ccff", "#gg66cc", "#12345"} {
+		if _, err := ParseHexColor(value); err == nil {
+			t.Fatalf("ParseHexColor(%q) error = nil, want error", value)
+		}
+	}
+	if _, err := json.Marshal(HexColor("blue")); err == nil {
+		t.Fatal("Marshal() error = nil, want invalid color error")
+	}
+	if err := json.Unmarshal([]byte(`"blue"`), &decoded); err == nil {
+		t.Fatal("Unmarshal() error = nil, want invalid color error")
+	}
+}
+
 func TestRegistrationModeValid(t *testing.T) {
 	tests := []struct {
 		name string
@@ -165,6 +203,9 @@ func TestUserJSONAndValidate(t *testing.T) {
 	}
 	if decoded.Profile.AvatarImage == nil || decoded.Profile.AvatarImage.ID != testAvatarImageID {
 		t.Fatalf("AvatarImage = %#v, want ID %q", decoded.Profile.AvatarImage, testAvatarImageID)
+	}
+	if decoded.Profile.AccentColor != HexColor("#3366cc") {
+		t.Fatalf("AccentColor = %q, want #3366cc", decoded.Profile.AccentColor)
 	}
 	if got := decoded.Profile.Contacts[0].URI; got != "sms:+15035551212" {
 		t.Fatalf("contact URI = %q, want sms:+15035551212", got)
@@ -592,7 +633,7 @@ func validUser() User {
 			AvatarImage: ptr(validAvatarImageRef()),
 			BannerImage: ptr(validBannerImageRef()),
 			Bio:         "Usually somewhere near the back of the convoy.",
-			AccentColor: "#3366cc",
+			AccentColor: "#3366CC",
 			Links: []UserProfileLink{
 				{
 					Kind:  "website",

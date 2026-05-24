@@ -64,7 +64,7 @@ func main() {
 		Profile: opencaravan.UserProfile{
 			DisplayName: "Riley",
 			AvatarImage: userAvatarImage,
-			AccentColor: "#3366cc",
+			AccentColor: opencaravan.HexColor("#3366cc"),
 			Contacts: []opencaravan.UserProfileContact{
 				{
 					Kind:        opencaravan.UserProfileContactSMS,
@@ -184,6 +184,10 @@ resources. User profiles and vehicles can both expose `AvatarImage` for compact
 or map representations and `BannerImage` for wider presentation surfaces. The
 reference does not carry a URL; clients derive the server fetch path from the
 resource ID and use the digest as a cache and integrity key.
+
+`HexColor` is the protocol type for opaque sRGB UI colors such as profile
+accent colors. It accepts `#RRGGBB`, rejects alpha, and serializes as canonical
+lowercase `#rrggbb`.
 
 `User.DeletionAfterInactivityDays` is optional. When set, it declares the number
 of inactive days after which a server may delete the user record if no

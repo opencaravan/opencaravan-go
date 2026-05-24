@@ -35,7 +35,7 @@ type UserProfile struct {
 	// views.
 	BannerImage *ImageResourceRef    `json:"banner_image,omitempty"`
 	Bio         string               `json:"bio,omitempty"`
-	AccentColor string               `json:"accent_color,omitempty"`
+	AccentColor HexColor             `json:"accent_color,omitempty"`
 	Links       []UserProfileLink    `json:"links,omitempty"`
 	Contacts    []UserProfileContact `json:"contacts,omitempty"`
 }
@@ -125,7 +125,7 @@ func (profile UserProfile) Validate() error {
 			return fmt.Errorf("banner_image: %w", err)
 		}
 	}
-	if profile.AccentColor != "" && !validHexColor(profile.AccentColor) {
+	if profile.AccentColor != "" && !profile.AccentColor.Valid() {
 		return errors.New("accent_color must be #RRGGBB")
 	}
 	for i, link := range profile.Links {
@@ -185,16 +185,4 @@ func (contact UserProfileContact) Validate() error {
 func validAbsoluteURL(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.Scheme != "" && u.Host != ""
-}
-
-func validHexColor(value string) bool {
-	if len(value) != 7 || value[0] != '#' {
-		return false
-	}
-	for _, r := range value[1:] {
-		if !isHex(r) {
-			return false
-		}
-	}
-	return true
 }
