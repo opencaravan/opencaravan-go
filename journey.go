@@ -6,21 +6,6 @@ import (
 	"time"
 )
 
-// JourneyVisibility describes who can discover or join a journey.
-type JourneyVisibility string
-
-const (
-	// JourneyPrivate means the journey is visible only to known participants.
-	JourneyPrivate JourneyVisibility = "private"
-	// JourneyInvite means the journey can be joined through an invite.
-	JourneyInvite JourneyVisibility = "invite"
-	// JourneyServer means the journey can be discovered by authenticated users
-	// on the same server.
-	JourneyServer JourneyVisibility = "server"
-	// JourneyPublic means the journey is publicly discoverable.
-	JourneyPublic JourneyVisibility = "public"
-)
-
 // JourneyState describes the lifecycle state of a journey.
 type JourneyState string
 
@@ -38,25 +23,49 @@ const (
 	JourneyDeleted JourneyState = "deleted"
 )
 
-// Journey describes a group drive shared through OpenCaravan.
+// Journey describes a private, invite-only group drive shared through
+// OpenCaravan.
 //
-// Journey is the aggregate representation: APIs may return segments and media
-// inline for small journeys, or page those collections separately for large
-// retained journeys.
+// Journey is the aggregate representation. APIs may return participants,
+// segments, and media inline for small journeys, or page those collections
+// separately for large retained journeys. New participants join through
+// server-issued invite tokens, and invite creation is governed by each attached
+// participant's privileges.
 type Journey struct {
-	ID              UUID              `json:"id"`
-	OriginServerURL string            `json:"origin_server_url"`
-	Title           string            `json:"title"`
-	Description     string            `json:"description,omitempty"`
-	Visibility      JourneyVisibility `json:"visibility"`
-	State           JourneyState      `json:"state"`
-	Policy          JourneyPolicy     `json:"policy"`
-	Segments        []JourneySegment  `json:"segments,omitempty"`
-	SharedMedia     []SharedMedia     `json:"shared_media,omitempty"`
-	CreatedAt       time.Time         `json:"created_at"`
-	StartsAt        *time.Time        `json:"starts_at,omitempty"`
-	StartedAt       *time.Time        `json:"started_at,omitempty"`
-	ClosedAt        *time.Time        `json:"closed_at,omitempty"`
+	ID              UUID                 `json:"id"`
+	OriginServerURL string               `json:"origin_server_url"`
+	Title           string               `json:"title"`
+	Description     string               `json:"description,omitempty"`
+	State           JourneyState         `json:"state"`
+	Policy          JourneyPolicy        `json:"policy"`
+	Participants    []JourneyParticipant `json:"participants,omitempty"`
+	Segments        []JourneySegment     `json:"segments,omitempty"`
+	SharedMedia     []SharedMedia        `json:"shared_media,omitempty"`
+	CreatedAt       time.Time            `json:"created_at"`
+	StartsAt        *time.Time           `json:"starts_at,omitempty"`
+	StartedAt       *time.Time           `json:"started_at,omitempty"`
+	ClosedAt        *time.Time           `json:"closed_at,omitempty"`
+}
+
+// JourneyParticipant describes a human participant attached to one journey.
+//
+// Segment vehicle occupants describe who is in a vehicle for a bounded segment.
+// JourneyParticipant describes the journey-level membership and the privileges
+// that membership carries.
+type JourneyParticipant struct {
+	ID            UUID                         `json:"id"`
+	JourneyID     UUID                         `json:"journey_id"`
+	ParticipantID UUID                         `json:"participant_id"`
+	DisplayName   string                       `json:"display_name,omitempty"`
+	Privileges    JourneyParticipantPrivileges `json:"privileges"`
+	JoinedAt      time.Time                    `json:"joined_at"`
+	LeftAt        *time.Time                   `json:"left_at,omitempty"`
+}
+
+// JourneyParticipantPrivileges describes what a participant may do within a
+// journey.
+type JourneyParticipantPrivileges struct {
+	CanGenerateInvites bool `json:"can_generate_invites"`
 }
 
 // HumanParticipant describes a person participating in OpenCaravan journeys.
@@ -169,6 +178,24 @@ type VehicleOccupant struct {
 	Role          OccupantRole `json:"role"`
 	JoinedAt      time.Time    `json:"joined_at"`
 	LeftAt        *time.Time   `json:"left_at,omitempty"`
+}
+
+// Validate reports whether participant has the required journey membership
+// identifiers and join time.
+func (participant JourneyParticipant) Validate() error {
+	if !participant.ID.Valid() {
+		return errors.New("journey participant id must be a valid UUID")
+	}
+	if !participant.JourneyID.Valid() {
+		return errors.New("journey_id must be a valid UUID")
+	}
+	if !participant.ParticipantID.Valid() {
+		return errors.New("participant_id must be a valid UUID")
+	}
+	if participant.JoinedAt.IsZero() {
+		return errors.New("joined_at must be set")
+	}
+	return nil
 }
 
 // Validate reports whether vehicle has the required segment, vehicle, occupant,

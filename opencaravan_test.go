@@ -1,6 +1,7 @@
 package opencaravan
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 	"time"
@@ -13,6 +14,8 @@ const (
 	testVehicleID        UUID = "44444444-4444-4444-8444-444444444444"
 	testParticipantID    UUID = "55555555-5555-4555-8555-555555555555"
 	testClientAppID      UUID = "66666666-6666-4666-8666-666666666666"
+	testMembershipID     UUID = "77777777-7777-4777-8777-777777777777"
+	testInviteID         UUID = "88888888-8888-4888-8888-888888888888"
 )
 
 func TestUUIDMarshalTextRequiresCanonicalID(t *testing.T) {
@@ -74,33 +77,152 @@ func TestRegistrationModeValid(t *testing.T) {
 	}
 }
 
-func TestJourneyInvitePayloadJSON(t *testing.T) {
+func TestNewJourneyInviteToken(t *testing.T) {
 	expiresAt := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
-	payload := NewJourneyInvitePayload("https://public.spivot.net", testJourneyID, "token", expiresAt)
-	payload.PolicyHash = "sha256:abc"
-	payload.DisplayName = "Sunday Ridge Drive"
 
-	encoded, err := json.Marshal(payload)
+	singleUse, err := NewJourneyInviteToken(JourneyInviteSingleUse, expiresAt)
+	if err != nil {
+		t.Fatalf("NewJourneyInviteToken() error = %v", err)
+	}
+	if singleUse.UseMode != JourneyInviteSingleUse {
+		t.Fatalf("UseMode = %q, want %q", singleUse.UseMode, JourneyInviteSingleUse)
+	}
+	if singleUse.MaxUses != 1 {
+		t.Fatalf("MaxUses = %d, want 1", singleUse.MaxUses)
+	}
+	tokenBytes, err := base64.RawURLEncoding.DecodeString(singleUse.Value)
+	if err != nil {
+		t.Fatalf("DecodeString() error = %v", err)
+	}
+	if len(tokenBytes) != journeyInviteTokenBytes {
+		t.Fatalf("decoded token length = %d, want %d", len(tokenBytes), journeyInviteTokenBytes)
+	}
+
+	multiUse, err := NewJourneyInviteToken(JourneyInviteMultiUse, expiresAt)
+	if err != nil {
+		t.Fatalf("NewJourneyInviteToken() error = %v", err)
+	}
+	if multiUse.MaxUses != 0 {
+		t.Fatalf("MaxUses = %d, want 0 for uncapped multi-use", multiUse.MaxUses)
+	}
+
+	if _, err := NewJourneyInviteToken(JourneyInviteUseMode("unknown"), expiresAt); err == nil {
+		t.Fatal("NewJourneyInviteToken() error = nil, want invalid use mode error")
+	}
+	if _, err := NewJourneyInviteToken(JourneyInviteSingleUse, time.Time{}); err == nil {
+		t.Fatal("NewJourneyInviteToken() error = nil, want missing expires_at error")
+	}
+}
+
+func TestJourneyInviteJSONAndValidate(t *testing.T) {
+	invite := validJourneyInvite(t)
+
+	if err := invite.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	encoded, err := json.Marshal(invite)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	var decoded JourneyInvitePayload
+	var decoded JourneyInvite
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	if decoded.Type != JourneyInvitePayloadType {
-		t.Fatalf("Type = %q, want %q", decoded.Type, JourneyInvitePayloadType)
+	if decoded.Type != JourneyInviteType {
+		t.Fatalf("Type = %q, want %q", decoded.Type, JourneyInviteType)
 	}
-	if decoded.Version != JourneyInvitePayloadVersion {
-		t.Fatalf("Version = %d, want %d", decoded.Version, JourneyInvitePayloadVersion)
+	if decoded.Version != JourneyInviteVersion {
+		t.Fatalf("Version = %d, want %d", decoded.Version, JourneyInviteVersion)
 	}
 	if decoded.JourneyID != testJourneyID {
 		t.Fatalf("JourneyID = %q, want %q", decoded.JourneyID, testJourneyID)
 	}
-	if !decoded.ExpiresAt.Equal(expiresAt) {
-		t.Fatalf("ExpiresAt = %s, want %s", decoded.ExpiresAt, expiresAt)
+	if decoded.Audience != JourneyInviteGroupAudience {
+		t.Fatalf("Audience = %q, want %q", decoded.Audience, JourneyInviteGroupAudience)
+	}
+	if decoded.Token.UseMode != JourneyInviteMultiUse {
+		t.Fatalf("Token.UseMode = %q, want %q", decoded.Token.UseMode, JourneyInviteMultiUse)
+	}
+	if decoded.Links == nil || decoded.Links.WebURL == "" || decoded.Links.AppURL == "" {
+		t.Fatalf("Links = %#v, want web and app URLs", decoded.Links)
+	}
+}
+
+func TestJourneyInviteValidateRejectsInvalidFields(t *testing.T) {
+	valid := validJourneyInvite(t)
+
+	tests := []struct {
+		name   string
+		mutate func(*JourneyInvite)
+	}{
+		{name: "missing invite id", mutate: func(i *JourneyInvite) { i.ID = "" }},
+		{name: "missing server url", mutate: func(i *JourneyInvite) { i.ServerURL = "" }},
+		{name: "unknown audience", mutate: func(i *JourneyInvite) { i.Audience = JourneyInviteAudience("unknown") }},
+		{name: "missing creator membership", mutate: func(i *JourneyInvite) { i.CreatedByJourneyParticipantID = "" }},
+		{name: "missing policy hash", mutate: func(i *JourneyInvite) { i.PolicyHash = "" }},
+		{name: "missing integrity", mutate: func(i *JourneyInvite) { i.Integrity = nil }},
+		{name: "malformed token", mutate: func(i *JourneyInvite) { i.Token.Value = "not base64url!" }},
+		{name: "single-use token with too many uses", mutate: func(i *JourneyInvite) {
+			i.Token.UseMode = JourneyInviteSingleUse
+			i.Token.MaxUses = 2
+		}},
+		{name: "multi-use token with single-use cap", mutate: func(i *JourneyInvite) {
+			i.Token.UseMode = JourneyInviteMultiUse
+			i.Token.MaxUses = 1
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			invite := valid
+			token := valid.Token
+			invite.Token = token
+			integrity := *valid.Integrity
+			invite.Integrity = &integrity
+			tt.mutate(&invite)
+			if err := invite.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestJourneyParticipantValidate(t *testing.T) {
+	valid := JourneyParticipant{
+		ID:            testMembershipID,
+		JourneyID:     testJourneyID,
+		ParticipantID: testParticipantID,
+		Privileges: JourneyParticipantPrivileges{
+			CanGenerateInvites: true,
+		},
+		JoinedAt: time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+	}
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*JourneyParticipant)
+	}{
+		{name: "missing membership id", mutate: func(p *JourneyParticipant) { p.ID = "" }},
+		{name: "missing journey id", mutate: func(p *JourneyParticipant) { p.JourneyID = "" }},
+		{name: "missing participant id", mutate: func(p *JourneyParticipant) { p.ParticipantID = "" }},
+		{name: "missing joined at", mutate: func(p *JourneyParticipant) { p.JoinedAt = time.Time{} }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			participant := valid
+			tt.mutate(&participant)
+			if err := participant.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
 	}
 }
 
@@ -200,6 +322,39 @@ func validPositionSample() PositionSample {
 		LongitudeE7:      -1221234567,
 		HeadingDegreesE2: ptr[int32](35999),
 	}
+}
+
+func validJourneyInvite(t *testing.T) JourneyInvite {
+	t.Helper()
+
+	expiresAt := time.Date(2026, 5, 24, 12, 30, 0, 0, time.UTC)
+	token, err := NewJourneyInviteToken(JourneyInviteMultiUse, expiresAt)
+	if err != nil {
+		t.Fatalf("NewJourneyInviteToken() error = %v", err)
+	}
+	token.MaxUses = 10
+
+	invite := NewJourneyInvite("https://public.spivot.net", testJourneyID, token)
+	invite.ID = testInviteID
+	invite.Audience = JourneyInviteGroupAudience
+	invite.CreatedByJourneyParticipantID = testMembershipID
+	invite.CreatedAt = time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
+	invite.PolicyHash = "sha256:abc"
+	invite.DisplayName = "Sunday Ridge Drive"
+	invite.Links = &JourneyInviteLinks{
+		WebURL: "https://public.spivot.net/invites/" + token.Value,
+		AppURL: "opencaravan://invite?token=" + token.Value,
+	}
+	invite.Presentation = &JourneyInvitePresentation{
+		Title:   "Join Sunday Ridge Drive",
+		Summary: "OpenCaravan group drive invite",
+	}
+	invite.Integrity = &JourneyInviteIntegrity{
+		Algorithm: "ed25519",
+		KeyID:     "server-key-1",
+		Signature: "base64url-signature",
+	}
+	return invite
 }
 
 func ptr[T any](value T) *T {
