@@ -47,3 +47,12 @@ just ci
 ```
 
 The module currently has no third-party dependencies.
+
+## License
+
+OpenCaravan Go is licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE) for the full text and attribution.
+
+"OpenCaravan" is a trademark of the OpenCaravan project. The code license does
+not grant trademark rights; see [TRADEMARK.md](TRADEMARK.md) for guidance on
+naming implementations, services, and forks.
