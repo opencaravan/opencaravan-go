@@ -44,7 +44,7 @@ import (
 func main() {
 	creationTime := time.Now()
 	deletionTime := creationTime.Add(7 * 24 * time.Hour)
-	deletionAfterInactivitySeconds := int64(90 * 24 * 60 * 60)
+	deletionAfterInactivityDays := int64(90)
 	user := opencaravan.User{
 		ID: serverAssignedID(),
 		Profile: opencaravan.UserProfile{
@@ -60,7 +60,7 @@ func main() {
 				},
 			},
 		},
-		DeletionAfterInactivitySeconds: &deletionAfterInactivitySeconds,
+		DeletionAfterInactivityDays: &deletionAfterInactivityDays,
 	}
 	journey := opencaravan.Journey{
 		ID:              serverAssignedID(),
@@ -157,10 +157,10 @@ server republishes its current view of that profile to authorized journey
 participants. Clients may mirror one profile across servers or tailor profile
 details for each server.
 
-`User.DeletionAfterInactivitySeconds` is optional. When set, it declares the
-duration after which a server may delete the user record if no server-defined
-activity resets the timer. The field is encoded as seconds so non-Go clients do
-not need to understand Go duration formatting.
+`User.DeletionAfterInactivityDays` is optional. When set, it declares the number
+of inactive days after which a server may delete the user record if no
+server-defined activity resets the timer. The day-level unit avoids promising
+more scheduling precision than implementations can reliably provide.
 
 `JourneyParticipant` is the membership record for one server-scoped user in one
 private journey. A journey participant may carry a profile projection so clients

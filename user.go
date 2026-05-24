@@ -13,10 +13,10 @@ import (
 type User struct {
 	ID      UUID        `json:"id"`
 	Profile UserProfile `json:"profile"`
-	// DeletionAfterInactivitySeconds is an optional duration after which the
+	// DeletionAfterInactivityDays is an optional duration after which the
 	// server may delete this user record if no activity resets the timer.
-	DeletionAfterInactivitySeconds *int64      `json:"deletion_after_inactivity_seconds,omitempty"`
-	ClientApps                     []ClientApp `json:"client_apps,omitempty"`
+	DeletionAfterInactivityDays *int64      `json:"deletion_after_inactivity_days,omitempty"`
+	ClientApps                  []ClientApp `json:"client_apps,omitempty"`
 }
 
 // UserProfile describes client-supplied profile information a server may
@@ -88,8 +88,8 @@ func (user User) Validate() error {
 	if !user.ID.Valid() {
 		return errors.New("user id must be a valid UUID")
 	}
-	if user.DeletionAfterInactivitySeconds != nil && *user.DeletionAfterInactivitySeconds <= 0 {
-		return errors.New("deletion_after_inactivity_seconds must be positive")
+	if user.DeletionAfterInactivityDays != nil && *user.DeletionAfterInactivityDays <= 0 {
+		return errors.New("deletion_after_inactivity_days must be positive")
 	}
 	if err := user.Profile.Validate(); err != nil {
 		return fmt.Errorf("profile: %w", err)
