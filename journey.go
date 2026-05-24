@@ -123,6 +123,16 @@ const (
 	SegmentDiscarded SegmentState = "discarded"
 )
 
+// Valid reports whether the segment state is a known OpenCaravan value.
+func (s SegmentState) Valid() bool {
+	switch s {
+	case SegmentPlanned, SegmentActive, SegmentClosed, SegmentDiscarded:
+		return true
+	default:
+		return false
+	}
+}
+
 // JourneySegment describes a bounded portion of a journey.
 //
 // A segment contains the participating vehicles. Each segment vehicle contains
