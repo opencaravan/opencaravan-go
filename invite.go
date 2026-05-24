@@ -16,29 +16,6 @@ const JourneyInviteType = "opencaravan.journey_invite"
 // JourneyInviteVersion is the current journey invite object version.
 const JourneyInviteVersion = 1
 
-// InviteUseMode describes whether an invite token may be redeemed once or more
-// than once.
-type InviteUseMode string
-
-const (
-	// InviteSingleUse means the token can admit at most one prospective user or
-	// participant.
-	InviteSingleUse InviteUseMode = "single_use"
-	// InviteMultiUse means the token can admit more than one prospective user
-	// or participant, optionally capped by MaxUses.
-	InviteMultiUse InviteUseMode = "multi_use"
-)
-
-// Valid reports whether the use mode is a known OpenCaravan value.
-func (m InviteUseMode) Valid() bool {
-	switch m {
-	case InviteSingleUse, InviteMultiUse:
-		return true
-	default:
-		return false
-	}
-}
-
 // InviteScope describes what a generated invite is allowed to grant.
 type InviteScope string
 
@@ -64,47 +41,37 @@ func (scope InviteScope) Valid() bool {
 // to a user or journey participant.
 //
 // Empty permissions grant no invite generation power. Non-empty permissions
-// describe the scopes and use modes a caller may request from a future
-// GenerateInvite operation, plus optional caps the server may enforce.
+// describe the scopes a caller may request from a future GenerateInvite
+// operation, plus optional caps the server may enforce.
 type InviteGenerationPermissions struct {
-	Scopes           []InviteScope   `json:"scopes,omitempty"`
-	UseModes         []InviteUseMode `json:"use_modes,omitempty"`
-	MaxUsesPerInvite int             `json:"max_uses_per_invite,omitempty"`
-	MaxLifetimeDays  int             `json:"max_lifetime_days,omitempty"`
+	Scopes []InviteScope `json:"scopes,omitempty"`
+	// MaxRedemptionsPerInvite limits how many successful redemptions a
+	// generated invite may allow. Zero means the server has not set a cap.
+	MaxRedemptionsPerInvite int `json:"max_redemptions_per_invite,omitempty"`
+	MaxLifetimeDays         int `json:"max_lifetime_days,omitempty"`
 }
 
-// Validate reports whether permissions contain valid invite scopes, use modes,
-// and non-negative caps.
+// Validate reports whether permissions contain valid invite scopes and
+// non-negative caps.
 func (permissions InviteGenerationPermissions) Validate() error {
-	if permissions.MaxUsesPerInvite < 0 {
-		return errors.New("max_uses_per_invite must be non-negative")
+	if permissions.MaxRedemptionsPerInvite < 0 {
+		return errors.New("max_redemptions_per_invite must be non-negative")
 	}
 	if permissions.MaxLifetimeDays < 0 {
 		return errors.New("max_lifetime_days must be non-negative")
 	}
 
-	empty := len(permissions.Scopes) == 0 && len(permissions.UseModes) == 0 &&
-		permissions.MaxUsesPerInvite == 0 && permissions.MaxLifetimeDays == 0
+	empty := len(permissions.Scopes) == 0 &&
+		permissions.MaxRedemptionsPerInvite == 0 && permissions.MaxLifetimeDays == 0
 	if empty {
 		return nil
 	}
 	if len(permissions.Scopes) == 0 {
 		return errors.New("scopes must contain at least one invite scope")
 	}
-	if len(permissions.UseModes) == 0 {
-		return errors.New("use_modes must contain at least one invite use mode")
-	}
 	for i, scope := range permissions.Scopes {
 		if !scope.Valid() {
 			return fmt.Errorf("scopes[%d] must be a known OpenCaravan value", i)
-		}
-	}
-	for i, mode := range permissions.UseModes {
-		if !mode.Valid() {
-			return fmt.Errorf("use_modes[%d] must be a known OpenCaravan value", i)
-		}
-		if mode == InviteMultiUse && permissions.MaxUsesPerInvite == 1 {
-			return errors.New("multi-use invite permissions max_uses_per_invite must be 0 or greater than 1")
 		}
 	}
 	return nil
@@ -113,8 +80,8 @@ func (permissions InviteGenerationPermissions) Validate() error {
 // JourneyInviteAudience describes the expected sharing pattern for an invite.
 //
 // Audience helps clients choose good presentation and warning language. The
-// server still enforces actual redemption behavior through the token use mode
-// and any server-side policy tied to the invite.
+// server still enforces actual redemption behavior through MaxRedemptions and
+// any server-side policy tied to the invite.
 type JourneyInviteAudience string
 
 const (
@@ -144,12 +111,15 @@ func (a JourneyInviteAudience) Valid() bool {
 // token is the secret capability. Integrity records how the issuing server made
 // the rest of the object tamper-evident.
 type JourneyInvite struct {
-	Type                          string                     `json:"type"`
-	Version                       int                        `json:"version"`
-	ID                            UUID                       `json:"id"`
-	ServerURL                     string                     `json:"server_url"`
-	JourneyID                     UUID                       `json:"journey_id"`
-	Token                         JourneyInviteToken         `json:"token"`
+	Type      string             `json:"type"`
+	Version   int                `json:"version"`
+	ID        UUID               `json:"id"`
+	ServerURL string             `json:"server_url"`
+	JourneyID UUID               `json:"journey_id"`
+	Token     JourneyInviteToken `json:"token"`
+	// MaxRedemptions is the maximum number of successful token redemptions.
+	// Zero means the issuing server has not capped redemptions.
+	MaxRedemptions                int                        `json:"max_redemptions"`
 	Audience                      JourneyInviteAudience      `json:"audience"`
 	CreatedByJourneyParticipantID UUID                       `json:"created_by_journey_participant_id"`
 	CreationTime                  time.Time                  `json:"creation_time"`
@@ -163,10 +133,8 @@ type JourneyInvite struct {
 // JourneyInviteToken is the server-issued secret capability carried by a
 // journey invite.
 type JourneyInviteToken struct {
-	Value          string        `json:"value"`
-	UseMode        InviteUseMode `json:"use_mode"`
-	MaxUses        int           `json:"max_uses,omitempty"`
-	ExpirationTime time.Time     `json:"expiration_time"`
+	Value          string    `json:"value"`
+	ExpirationTime time.Time `json:"expiration_time"`
 }
 
 // JourneyInviteLinks describes the URL forms an app or server can use to
@@ -201,10 +169,7 @@ type JourneyInviteIntegrity struct {
 // The token value contains 256 bits of randomness encoded as unpadded base64url
 // text so it can travel safely in URLs, QR codes, JSON, and platform share
 // payloads.
-func NewJourneyInviteToken(useMode InviteUseMode, expirationTime time.Time) (JourneyInviteToken, error) {
-	if !useMode.Valid() {
-		return JourneyInviteToken{}, errors.New("invite token use mode must be a known OpenCaravan value")
-	}
+func NewJourneyInviteToken(expirationTime time.Time) (JourneyInviteToken, error) {
 	if expirationTime.IsZero() {
 		return JourneyInviteToken{}, errors.New("invite token expiration_time must be set")
 	}
@@ -214,26 +179,25 @@ func NewJourneyInviteToken(useMode InviteUseMode, expirationTime time.Time) (Jou
 		return JourneyInviteToken{}, fmt.Errorf("read random invite token bytes: %w", err)
 	}
 
-	token := JourneyInviteToken{
+	return JourneyInviteToken{
 		Value:          base64.RawURLEncoding.EncodeToString(b),
-		UseMode:        useMode,
 		ExpirationTime: expirationTime,
-	}
-	if useMode == InviteSingleUse {
-		token.MaxUses = 1
-	}
-	return token, nil
+	}, nil
 }
 
 // NewJourneyInvite returns a journey invite with the current type and version
 // fields populated.
-func NewJourneyInvite(serverURL string, journeyID UUID, token JourneyInviteToken) JourneyInvite {
+//
+// maxRedemptions is copied to MaxRedemptions. Zero means the issuing server has
+// not capped redemptions.
+func NewJourneyInvite(serverURL string, journeyID UUID, token JourneyInviteToken, maxRedemptions int) JourneyInvite {
 	return JourneyInvite{
-		Type:      JourneyInviteType,
-		Version:   JourneyInviteVersion,
-		ServerURL: serverURL,
-		JourneyID: journeyID,
-		Token:     token,
+		Type:           JourneyInviteType,
+		Version:        JourneyInviteVersion,
+		ServerURL:      serverURL,
+		JourneyID:      journeyID,
+		Token:          token,
+		MaxRedemptions: maxRedemptions,
 	}
 }
 
@@ -258,6 +222,9 @@ func (invite JourneyInvite) Validate() error {
 	if err := invite.Token.Validate(); err != nil {
 		return fmt.Errorf("token: %w", err)
 	}
+	if invite.MaxRedemptions < 0 {
+		return errors.New("max_redemptions must be non-negative")
+	}
 	if !invite.Audience.Valid() {
 		return errors.New("audience must be a known OpenCaravan value")
 	}
@@ -279,8 +246,7 @@ func (invite JourneyInvite) Validate() error {
 	return nil
 }
 
-// Validate reports whether token contains a secret value, known use mode,
-// bounded use count semantics, and expiration.
+// Validate reports whether token contains a secret value and expiration.
 func (token JourneyInviteToken) Validate() error {
 	if token.Value == "" {
 		return errors.New("invite token value must be set")
@@ -291,22 +257,6 @@ func (token JourneyInviteToken) Validate() error {
 	}
 	if len(tokenBytes) != journeyInviteTokenBytes {
 		return fmt.Errorf("invite token must contain %d random bytes", journeyInviteTokenBytes)
-	}
-	if !token.UseMode.Valid() {
-		return errors.New("invite token use mode must be a known OpenCaravan value")
-	}
-	if token.MaxUses < 0 {
-		return errors.New("invite token max_uses must be non-negative")
-	}
-	switch token.UseMode {
-	case InviteSingleUse:
-		if token.MaxUses > 1 {
-			return errors.New("single-use invite token max_uses must be 0 or 1")
-		}
-	case InviteMultiUse:
-		if token.MaxUses == 1 {
-			return errors.New("multi-use invite token max_uses must be 0 or greater than 1")
-		}
 	}
 	if token.ExpirationTime.IsZero() {
 		return errors.New("invite token expiration_time must be set")

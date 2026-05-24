@@ -63,10 +63,9 @@ func main() {
 		ID: serverAssignedID(),
 		Permissions: &opencaravan.UserPermissions{
 			InviteGeneration: &opencaravan.InviteGenerationPermissions{
-				Scopes:           []opencaravan.InviteScope{opencaravan.InviteScopeServerRegistration},
-				UseModes:         []opencaravan.InviteUseMode{opencaravan.InviteSingleUse},
-				MaxUsesPerInvite: 1,
-				MaxLifetimeDays:  30,
+				Scopes:                  []opencaravan.InviteScope{opencaravan.InviteScopeServerRegistration},
+				MaxRedemptionsPerInvite: 1,
+				MaxLifetimeDays:         30,
 			},
 		},
 		Profile: opencaravan.UserProfile{
@@ -114,10 +113,9 @@ func main() {
 		Profile:       &user.Profile,
 		Privileges: opencaravan.JourneyParticipantPrivileges{
 			InviteGeneration: &opencaravan.InviteGenerationPermissions{
-				Scopes:           []opencaravan.InviteScope{opencaravan.InviteScopeJourney},
-				UseModes:         []opencaravan.InviteUseMode{opencaravan.InviteSingleUse, opencaravan.InviteMultiUse},
-				MaxUsesPerInvite: 25,
-				MaxLifetimeDays:  7,
+				Scopes:                  []opencaravan.InviteScope{opencaravan.InviteScopeJourney},
+				MaxRedemptionsPerInvite: 25,
+				MaxLifetimeDays:         7,
 			},
 		},
 		JoinTime: creationTime,
@@ -130,19 +128,16 @@ func main() {
 		panic(err)
 	}
 
-	token, err := opencaravan.NewJourneyInviteToken(
-		opencaravan.InviteMultiUse,
-		time.Now().Add(2*time.Hour),
-	)
+	token, err := opencaravan.NewJourneyInviteToken(time.Now().Add(2 * time.Hour))
 	if err != nil {
 		panic(err)
 	}
-	token.MaxUses = 25
 
 	invite := opencaravan.NewJourneyInvite(
 		"https://public.spivot.net",
 		journey.ID,
 		token,
+		25,
 	)
 	invite.ID = serverAssignedID()
 	invite.Audience = opencaravan.JourneyInviteGroupAudience
@@ -188,8 +183,8 @@ The normal client/server wire path is JSON marshaling and unmarshaling.
 Servers are invite-governed. `RegistrationInvite` means user registration
 requires a server or journey invite with registration scope; `RegistrationClosed`
 means the server is not accepting new registrations. Public servers can still be
-easy to join by publishing admin-created multi-use invites while preserving
-operator-visible provenance.
+easy to join by publishing admin-created invites with higher redemption caps
+while preserving operator-visible provenance.
 
 `Journey.DeletionTime` is the immutable scheduled hard-deletion time. A nil
 value means the server has not scheduled the journey for deletion. Journey-level
@@ -224,7 +219,7 @@ in `UserProfileLink`.
 `InviteGenerationPermissions` describes what kind of invites a user or journey
 participant may ask the server to generate. Server-scoped user permissions can
 grant registration invite powers, while journey participant privileges can grant
-journey invite powers with separate use-mode, use-count, and lifetime caps.
+journey invite powers with separate redemption-count and lifetime caps.
 
 `User.DeletionAfterInactivityDays` is optional. When set, it declares the number
 of inactive days after which a server may delete the user record if no
@@ -236,12 +231,14 @@ private journey. A journey participant may carry a profile projection so clients
 can render the display name, avatar, accent color, public links, and opt-in
 contact methods that are visible to other people sharing the journey.
 
-For a one-person private-message journey invite, use `InviteSingleUse` and
-`JourneyInviteIndividualAudience`. For a link posted to a group chat or web
-forum, use `InviteMultiUse`, optionally capped with `MaxUses`. `WebURL` is the
-browser entry point that lets the server process or redeem the invite; `AppURL`
-is the deep link a server or client can use to hand off to a registered
-OpenCaravan client app.
+For a one-person private-message journey invite, use
+`JourneyInviteIndividualAudience` and `MaxRedemptions` set to `1`. For a link
+posted to a group chat or web forum, use `JourneyInviteGroupAudience` and set
+`MaxRedemptions` to the server-enforced redemption cap. A value of `0` means
+the issuing server has not capped redemptions. `WebURL` is the browser entry
+point that lets the server process or redeem the invite; `AppURL` is the deep
+link a server or client can use to hand off to a registered OpenCaravan client
+app.
 
 ## Package Scope
 
@@ -254,8 +251,8 @@ The package currently includes draft types for:
 - in-protocol image resource references for user and vehicle presentation
 - invite-governed registration posture and scoped invite generation
   permissions
-- portable journey invites with single-use and multi-use token semantics,
-  integrity metadata, and web/app link forms
+- portable journey invites with redemption caps, integrity metadata, and
+  web/app link forms
 - participant-shared journey media
 - position telemetry samples
 

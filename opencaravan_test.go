@@ -175,26 +175,6 @@ func TestInviteScopeValid(t *testing.T) {
 	}
 }
 
-func TestInviteUseModeValid(t *testing.T) {
-	tests := []struct {
-		name string
-		mode InviteUseMode
-		want bool
-	}{
-		{name: "single use", mode: InviteSingleUse, want: true},
-		{name: "multi use", mode: InviteMultiUse, want: true},
-		{name: "unknown", mode: InviteUseMode("unknown"), want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.mode.Valid(); got != tt.want {
-				t.Fatalf("Valid() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestInviteGenerationPermissionsValidate(t *testing.T) {
 	valid := validJourneyInviteGenerationPermissions()
 
@@ -210,19 +190,15 @@ func TestInviteGenerationPermissionsValidate(t *testing.T) {
 		mutate func(*InviteGenerationPermissions)
 	}{
 		{name: "missing scopes", mutate: func(p *InviteGenerationPermissions) { p.Scopes = nil }},
-		{name: "missing use modes", mutate: func(p *InviteGenerationPermissions) { p.UseModes = nil }},
 		{name: "invalid scope", mutate: func(p *InviteGenerationPermissions) { p.Scopes[0] = InviteScope("unknown") }},
-		{name: "invalid use mode", mutate: func(p *InviteGenerationPermissions) { p.UseModes[0] = InviteUseMode("unknown") }},
-		{name: "negative uses cap", mutate: func(p *InviteGenerationPermissions) { p.MaxUsesPerInvite = -1 }},
+		{name: "negative redemption cap", mutate: func(p *InviteGenerationPermissions) { p.MaxRedemptionsPerInvite = -1 }},
 		{name: "negative lifetime cap", mutate: func(p *InviteGenerationPermissions) { p.MaxLifetimeDays = -1 }},
-		{name: "multi-use with single-use cap", mutate: func(p *InviteGenerationPermissions) { p.MaxUsesPerInvite = 1 }},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			permissions := valid
 			permissions.Scopes = append([]InviteScope(nil), valid.Scopes...)
-			permissions.UseModes = append([]InviteUseMode(nil), valid.UseModes...)
 			tt.mutate(&permissions)
 			if err := permissions.Validate(); err == nil {
 				t.Fatal("Validate() error = nil, want error")
@@ -547,17 +523,11 @@ func TestJourneyValidate(t *testing.T) {
 func TestNewJourneyInviteToken(t *testing.T) {
 	expirationTime := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 
-	singleUse, err := NewJourneyInviteToken(InviteSingleUse, expirationTime)
+	token, err := NewJourneyInviteToken(expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
-	if singleUse.UseMode != InviteSingleUse {
-		t.Fatalf("UseMode = %q, want %q", singleUse.UseMode, InviteSingleUse)
-	}
-	if singleUse.MaxUses != 1 {
-		t.Fatalf("MaxUses = %d, want 1", singleUse.MaxUses)
-	}
-	tokenBytes, err := base64.RawURLEncoding.DecodeString(singleUse.Value)
+	tokenBytes, err := base64.RawURLEncoding.DecodeString(token.Value)
 	if err != nil {
 		t.Fatalf("DecodeString() error = %v", err)
 	}
@@ -565,18 +535,7 @@ func TestNewJourneyInviteToken(t *testing.T) {
 		t.Fatalf("decoded token length = %d, want %d", len(tokenBytes), journeyInviteTokenBytes)
 	}
 
-	multiUse, err := NewJourneyInviteToken(InviteMultiUse, expirationTime)
-	if err != nil {
-		t.Fatalf("NewJourneyInviteToken() error = %v", err)
-	}
-	if multiUse.MaxUses != 0 {
-		t.Fatalf("MaxUses = %d, want 0 for uncapped multi-use", multiUse.MaxUses)
-	}
-
-	if _, err := NewJourneyInviteToken(InviteUseMode("unknown"), expirationTime); err == nil {
-		t.Fatal("NewJourneyInviteToken() error = nil, want invalid use mode error")
-	}
-	if _, err := NewJourneyInviteToken(InviteSingleUse, time.Time{}); err == nil {
+	if _, err := NewJourneyInviteToken(time.Time{}); err == nil {
 		t.Fatal("NewJourneyInviteToken() error = nil, want missing expiration_time error")
 	}
 }
@@ -610,8 +569,8 @@ func TestJourneyInviteJSONAndValidate(t *testing.T) {
 	if decoded.Audience != JourneyInviteGroupAudience {
 		t.Fatalf("Audience = %q, want %q", decoded.Audience, JourneyInviteGroupAudience)
 	}
-	if decoded.Token.UseMode != InviteMultiUse {
-		t.Fatalf("Token.UseMode = %q, want %q", decoded.Token.UseMode, InviteMultiUse)
+	if decoded.MaxRedemptions != 10 {
+		t.Fatalf("MaxRedemptions = %d, want 10", decoded.MaxRedemptions)
 	}
 	if decoded.Links == nil || decoded.Links.WebURL == "" || decoded.Links.AppURL == "" {
 		t.Fatalf("Links = %#v, want web and app URLs", decoded.Links)
@@ -632,14 +591,7 @@ func TestJourneyInviteValidateRejectsInvalidFields(t *testing.T) {
 		{name: "missing policy hash", mutate: func(i *JourneyInvite) { i.PolicyHash = "" }},
 		{name: "missing integrity", mutate: func(i *JourneyInvite) { i.Integrity = nil }},
 		{name: "malformed token", mutate: func(i *JourneyInvite) { i.Token.Value = "not base64url!" }},
-		{name: "single-use token with too many uses", mutate: func(i *JourneyInvite) {
-			i.Token.UseMode = InviteSingleUse
-			i.Token.MaxUses = 2
-		}},
-		{name: "multi-use token with single-use cap", mutate: func(i *JourneyInvite) {
-			i.Token.UseMode = InviteMultiUse
-			i.Token.MaxUses = 1
-		}},
+		{name: "negative max redemptions", mutate: func(i *JourneyInvite) { i.MaxRedemptions = -1 }},
 	}
 
 	for _, tt := range tests {
@@ -680,7 +632,7 @@ func TestJourneyParticipantValidate(t *testing.T) {
 		{name: "missing journey id", mutate: func(p *JourneyParticipant) { p.JourneyID = "" }},
 		{name: "missing user id", mutate: func(p *JourneyParticipant) { p.UserID = "" }},
 		{name: "invalid profile", mutate: func(p *JourneyParticipant) { p.Profile = &UserProfile{} }},
-		{name: "invalid privileges", mutate: func(p *JourneyParticipant) { p.Privileges.InviteGeneration.UseModes[0] = InviteUseMode("unknown") }},
+		{name: "invalid privileges", mutate: func(p *JourneyParticipant) { p.Privileges.InviteGeneration.Scopes[0] = InviteScope("unknown") }},
 		{name: "missing join time", mutate: func(p *JourneyParticipant) { p.JoinTime = time.Time{} }},
 	}
 
@@ -690,7 +642,6 @@ func TestJourneyParticipantValidate(t *testing.T) {
 			if valid.Privileges.InviteGeneration != nil {
 				permissions := *valid.Privileges.InviteGeneration
 				permissions.Scopes = append([]InviteScope(nil), permissions.Scopes...)
-				permissions.UseModes = append([]InviteUseMode(nil), permissions.UseModes...)
 				participant.Privileges.InviteGeneration = &permissions
 			}
 			tt.mutate(&participant)
@@ -804,10 +755,9 @@ func validUser() User {
 		ID: testUserID,
 		Permissions: &UserPermissions{
 			InviteGeneration: ptr(InviteGenerationPermissions{
-				Scopes:           []InviteScope{InviteScopeServerRegistration},
-				UseModes:         []InviteUseMode{InviteSingleUse},
-				MaxLifetimeDays:  30,
-				MaxUsesPerInvite: 1,
+				Scopes:                  []InviteScope{InviteScopeServerRegistration},
+				MaxLifetimeDays:         30,
+				MaxRedemptionsPerInvite: 1,
 			}),
 		},
 		Profile: UserProfile{
@@ -866,10 +816,9 @@ func validVehicle() Vehicle {
 
 func validJourneyInviteGenerationPermissions() InviteGenerationPermissions {
 	return InviteGenerationPermissions{
-		Scopes:           []InviteScope{InviteScopeJourney},
-		UseModes:         []InviteUseMode{InviteSingleUse, InviteMultiUse},
-		MaxUsesPerInvite: 25,
-		MaxLifetimeDays:  7,
+		Scopes:                  []InviteScope{InviteScopeJourney},
+		MaxRedemptionsPerInvite: 25,
+		MaxLifetimeDays:         7,
 	}
 }
 
@@ -958,13 +907,12 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 	t.Helper()
 
 	expirationTime := time.Date(2026, 5, 24, 12, 30, 0, 0, time.UTC)
-	token, err := NewJourneyInviteToken(InviteMultiUse, expirationTime)
+	token, err := NewJourneyInviteToken(expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
-	token.MaxUses = 10
 
-	invite := NewJourneyInvite("https://public.spivot.net", testJourneyID, token)
+	invite := NewJourneyInvite("https://public.spivot.net", testJourneyID, token, 10)
 	invite.ID = testInviteID
 	invite.Audience = JourneyInviteGroupAudience
 	invite.CreatedByJourneyParticipantID = testMembershipID
