@@ -61,6 +61,14 @@ func main() {
 	}
 	user := opencaravan.User{
 		ID: serverAssignedID(),
+		Permissions: &opencaravan.UserPermissions{
+			InviteGeneration: &opencaravan.InviteGenerationPermissions{
+				Scopes:           []opencaravan.InviteScope{opencaravan.InviteScopeServerRegistration},
+				UseModes:         []opencaravan.InviteUseMode{opencaravan.InviteSingleUse},
+				MaxUsesPerInvite: 1,
+				MaxLifetimeDays:  30,
+			},
+		},
 		Profile: opencaravan.UserProfile{
 			DisplayName: "Riley",
 			AvatarImage: userAvatarImage,
@@ -100,7 +108,12 @@ func main() {
 		UserID:        user.ID,
 		Profile:       &user.Profile,
 		Privileges: opencaravan.JourneyParticipantPrivileges{
-			CanGenerateInvites: true,
+			InviteGeneration: &opencaravan.InviteGenerationPermissions{
+				Scopes:           []opencaravan.InviteScope{opencaravan.InviteScopeJourney},
+				UseModes:         []opencaravan.InviteUseMode{opencaravan.InviteSingleUse, opencaravan.InviteMultiUse},
+				MaxUsesPerInvite: 25,
+				MaxLifetimeDays:  7,
+			},
 		},
 		JoinTime: creationTime,
 	}
@@ -113,7 +126,7 @@ func main() {
 	}
 
 	token, err := opencaravan.NewJourneyInviteToken(
-		opencaravan.JourneyInviteMultiUse,
+		opencaravan.InviteMultiUse,
 		time.Now().Add(2*time.Hour),
 	)
 	if err != nil {
@@ -167,6 +180,12 @@ implementation test, or conformance fixture. Use `ParseUUID` when accepting a
 UUID from text, configuration, a command-line flag, or another non-JSON boundary.
 The normal client/server wire path is JSON marshaling and unmarshaling.
 
+Servers are invite-governed. `RegistrationInvite` means user registration
+requires a server or journey invite with registration scope; `RegistrationClosed`
+means the server is not accepting new registrations. Public servers can still be
+easy to join by publishing admin-created multi-use invites while preserving
+operator-visible provenance.
+
 `Journey.DeletionTime` is the immutable scheduled hard-deletion time. A nil
 value means the server has not scheduled the journey for deletion. Journey-level
 feature flags such as `ExportAllowed` and `MediaAllowed` describe capabilities
@@ -194,6 +213,11 @@ example, a `mobile_number` value can support calling, SMS, or compatible local
 messaging apps depending on client capabilities. Public web or app links belong
 in `UserProfileLink`.
 
+`InviteGenerationPermissions` describes what kind of invites a user or journey
+participant may ask the server to generate. Server-scoped user permissions can
+grant registration invite powers, while journey participant privileges can grant
+journey invite powers with separate use-mode, use-count, and lifetime caps.
+
 `User.DeletionAfterInactivityDays` is optional. When set, it declares the number
 of inactive days after which a server may delete the user record if no
 server-defined activity resets the timer. The day-level unit avoids promising
@@ -204,11 +228,11 @@ private journey. A journey participant may carry a profile projection so clients
 can render the display name, avatar, accent color, public links, and opt-in
 contact methods that are visible to other people sharing the journey.
 
-For a one-person private-message invite, use `JourneyInviteSingleUse` and
+For a one-person private-message journey invite, use `InviteSingleUse` and
 `JourneyInviteIndividualAudience`. For a link posted to a group chat or web
-forum, use `JourneyInviteMultiUse`, optionally capped with `MaxUses`. `WebURL`
-is the browser entry point that lets the server process or redeem the invite;
-`AppURL` is the deep link a server or client can use to hand off to a registered
+forum, use `InviteMultiUse`, optionally capped with `MaxUses`. `WebURL` is the
+browser entry point that lets the server process or redeem the invite; `AppURL`
+is the deep link a server or client can use to hand off to a registered
 OpenCaravan client app.
 
 ## Package Scope
@@ -220,6 +244,8 @@ The package currently includes draft types for:
 - private invite-only journeys, users, journey participants, client apps,
   segments, and vehicles
 - in-protocol image resource references for user and vehicle presentation
+- invite-governed registration posture and scoped invite generation
+  permissions
 - portable journey invites with single-use and multi-use token semantics,
   integrity metadata, and web/app link forms
 - participant-shared journey media

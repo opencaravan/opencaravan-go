@@ -5,24 +5,23 @@ import "errors"
 // ProtocolVersion is the current draft OpenCaravan protocol version.
 const ProtocolVersion = "0.1-draft"
 
-// RegistrationMode describes how a server allows new accounts or devices to
-// enroll.
+// RegistrationMode describes whether a server is currently accepting
+// invite-backed user registration.
 type RegistrationMode string
 
 const (
-	// RegistrationClosed means the server does not accept self-service
-	// enrollment.
+	// RegistrationClosed means the server does not accept new user
+	// registrations.
 	RegistrationClosed RegistrationMode = "closed"
-	// RegistrationInvite means enrollment requires an invite.
+	// RegistrationInvite means user registration requires a server or journey
+	// invite with registration scope.
 	RegistrationInvite RegistrationMode = "invite"
-	// RegistrationOpen means the server accepts public enrollment.
-	RegistrationOpen RegistrationMode = "open"
 )
 
 // Valid reports whether the registration mode is a known OpenCaravan value.
 func (m RegistrationMode) Valid() bool {
 	switch m {
-	case RegistrationClosed, RegistrationInvite, RegistrationOpen:
+	case RegistrationClosed, RegistrationInvite:
 		return true
 	default:
 		return false
@@ -32,8 +31,9 @@ func (m RegistrationMode) Valid() bool {
 // ServerPolicy advertises a server's public OpenCaravan capability envelope.
 //
 // Journey-specific retention and feature choices are represented directly on
-// Journey. ServerPolicy describes the server identity, enrollment posture, and
-// operator-facing policy documents that users should see before joining.
+// Journey. ServerPolicy describes the server identity, invite-governed
+// enrollment posture, and operator-facing policy documents that users should
+// see before joining.
 type ServerPolicy struct {
 	ProtocolVersion  string           `json:"protocol_version"`
 	ServerURL        string           `json:"server_url"`

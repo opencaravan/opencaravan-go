@@ -15,10 +15,17 @@ import (
 type User struct {
 	ID      UUID        `json:"id"`
 	Profile UserProfile `json:"profile"`
+	// Permissions describes server-scoped powers granted to this user.
+	Permissions *UserPermissions `json:"permissions,omitempty"`
 	// DeletionAfterInactivityDays is an optional duration after which the
 	// server may delete this user record if no activity resets the timer.
 	DeletionAfterInactivityDays *int64      `json:"deletion_after_inactivity_days,omitempty"`
 	ClientApps                  []ClientApp `json:"client_apps,omitempty"`
+}
+
+// UserPermissions describes server-scoped powers granted to a user.
+type UserPermissions struct {
+	InviteGeneration *InviteGenerationPermissions `json:"invite_generation,omitempty"`
 }
 
 // UserProfile describes client-supplied profile information a server may
@@ -80,6 +87,11 @@ func (user User) Validate() error {
 	if user.DeletionAfterInactivityDays != nil && *user.DeletionAfterInactivityDays <= 0 {
 		return errors.New("deletion_after_inactivity_days must be positive")
 	}
+	if user.Permissions != nil {
+		if err := user.Permissions.Validate(); err != nil {
+			return fmt.Errorf("permissions: %w", err)
+		}
+	}
 	if err := user.Profile.Validate(); err != nil {
 		return fmt.Errorf("profile: %w", err)
 	}
@@ -89,6 +101,17 @@ func (user User) Validate() error {
 		}
 		if app.UserID != user.ID {
 			return fmt.Errorf("client_apps[%d]: user_id does not match user", i)
+		}
+	}
+	return nil
+}
+
+// Validate reports whether permissions contain valid optional capability
+// envelopes.
+func (permissions UserPermissions) Validate() error {
+	if permissions.InviteGeneration != nil {
+		if err := permissions.InviteGeneration.Validate(); err != nil {
+			return fmt.Errorf("invite_generation: %w", err)
 		}
 	}
 	return nil

@@ -84,7 +84,7 @@ type JourneyParticipant struct {
 // JourneyParticipantPrivileges describes what a participant may do within a
 // journey.
 type JourneyParticipantPrivileges struct {
-	CanGenerateInvites bool `json:"can_generate_invites"`
+	InviteGeneration *InviteGenerationPermissions `json:"invite_generation,omitempty"`
 }
 
 // ClientApp describes one OpenCaravan-capable app installation or session
@@ -272,8 +272,22 @@ func (participant JourneyParticipant) Validate() error {
 			return fmt.Errorf("profile: %w", err)
 		}
 	}
+	if err := participant.Privileges.Validate(); err != nil {
+		return fmt.Errorf("privileges: %w", err)
+	}
 	if participant.JoinTime.IsZero() {
 		return errors.New("join_time must be set")
+	}
+	return nil
+}
+
+// Validate reports whether privileges contain valid optional capability
+// envelopes.
+func (privileges JourneyParticipantPrivileges) Validate() error {
+	if privileges.InviteGeneration != nil {
+		if err := privileges.InviteGeneration.Validate(); err != nil {
+			return fmt.Errorf("invite_generation: %w", err)
+		}
 	}
 	return nil
 }

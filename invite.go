@@ -16,27 +16,98 @@ const JourneyInviteType = "opencaravan.journey_invite"
 // JourneyInviteVersion is the current journey invite object version.
 const JourneyInviteVersion = 1
 
-// JourneyInviteUseMode describes whether an invite token may be redeemed once
-// or more than once.
-type JourneyInviteUseMode string
+// InviteUseMode describes whether an invite token may be redeemed once or more
+// than once.
+type InviteUseMode string
 
 const (
-	// JourneyInviteSingleUse means the token can admit at most one prospective
+	// InviteSingleUse means the token can admit at most one prospective user or
 	// participant.
-	JourneyInviteSingleUse JourneyInviteUseMode = "single_use"
-	// JourneyInviteMultiUse means the token can admit more than one prospective
-	// participant, optionally capped by MaxUses.
-	JourneyInviteMultiUse JourneyInviteUseMode = "multi_use"
+	InviteSingleUse InviteUseMode = "single_use"
+	// InviteMultiUse means the token can admit more than one prospective user
+	// or participant, optionally capped by MaxUses.
+	InviteMultiUse InviteUseMode = "multi_use"
 )
 
 // Valid reports whether the use mode is a known OpenCaravan value.
-func (m JourneyInviteUseMode) Valid() bool {
+func (m InviteUseMode) Valid() bool {
 	switch m {
-	case JourneyInviteSingleUse, JourneyInviteMultiUse:
+	case InviteSingleUse, InviteMultiUse:
 		return true
 	default:
 		return false
 	}
+}
+
+// InviteScope describes what a generated invite is allowed to grant.
+type InviteScope string
+
+const (
+	// InviteScopeJourney means the invite may grant access to a journey.
+	InviteScopeJourney InviteScope = "journey"
+	// InviteScopeServerRegistration means the invite may register a
+	// server-scoped user.
+	InviteScopeServerRegistration InviteScope = "server_registration"
+)
+
+// Valid reports whether scope is a known OpenCaravan invite scope.
+func (scope InviteScope) Valid() bool {
+	switch scope {
+	case InviteScopeJourney, InviteScopeServerRegistration:
+		return true
+	default:
+		return false
+	}
+}
+
+// InviteGenerationPermissions describes the invite power a server has granted
+// to a user or journey participant.
+//
+// Empty permissions grant no invite generation power. Non-empty permissions
+// describe the scopes and use modes a caller may request from a future
+// GenerateInvite operation, plus optional caps the server may enforce.
+type InviteGenerationPermissions struct {
+	Scopes           []InviteScope   `json:"scopes,omitempty"`
+	UseModes         []InviteUseMode `json:"use_modes,omitempty"`
+	MaxUsesPerInvite int             `json:"max_uses_per_invite,omitempty"`
+	MaxLifetimeDays  int             `json:"max_lifetime_days,omitempty"`
+}
+
+// Validate reports whether permissions contain valid invite scopes, use modes,
+// and non-negative caps.
+func (permissions InviteGenerationPermissions) Validate() error {
+	if permissions.MaxUsesPerInvite < 0 {
+		return errors.New("max_uses_per_invite must be non-negative")
+	}
+	if permissions.MaxLifetimeDays < 0 {
+		return errors.New("max_lifetime_days must be non-negative")
+	}
+
+	empty := len(permissions.Scopes) == 0 && len(permissions.UseModes) == 0 &&
+		permissions.MaxUsesPerInvite == 0 && permissions.MaxLifetimeDays == 0
+	if empty {
+		return nil
+	}
+	if len(permissions.Scopes) == 0 {
+		return errors.New("scopes must contain at least one invite scope")
+	}
+	if len(permissions.UseModes) == 0 {
+		return errors.New("use_modes must contain at least one invite use mode")
+	}
+	for i, scope := range permissions.Scopes {
+		if !scope.Valid() {
+			return fmt.Errorf("scopes[%d] must be a known OpenCaravan value", i)
+		}
+	}
+	for i, mode := range permissions.UseModes {
+		if !mode.Valid() {
+			return fmt.Errorf("use_modes[%d] must be a known OpenCaravan value", i)
+		}
+		if mode == InviteMultiUse && permissions.MaxUsesPerInvite == 1 {
+			return errors.New("multi-use invite permissions max_uses_per_invite must be 0 or greater than 1")
+		}
+	}
+	return nil
 }
 
 // JourneyInviteAudience describes the expected sharing pattern for an invite.
@@ -92,10 +163,10 @@ type JourneyInvite struct {
 // JourneyInviteToken is the server-issued secret capability carried by a
 // journey invite.
 type JourneyInviteToken struct {
-	Value          string               `json:"value"`
-	UseMode        JourneyInviteUseMode `json:"use_mode"`
-	MaxUses        int                  `json:"max_uses,omitempty"`
-	ExpirationTime time.Time            `json:"expiration_time"`
+	Value          string        `json:"value"`
+	UseMode        InviteUseMode `json:"use_mode"`
+	MaxUses        int           `json:"max_uses,omitempty"`
+	ExpirationTime time.Time     `json:"expiration_time"`
 }
 
 // JourneyInviteLinks describes the URL forms an app or server can use to
@@ -130,7 +201,7 @@ type JourneyInviteIntegrity struct {
 // The token value contains 256 bits of randomness encoded as unpadded base64url
 // text so it can travel safely in URLs, QR codes, JSON, and platform share
 // payloads.
-func NewJourneyInviteToken(useMode JourneyInviteUseMode, expirationTime time.Time) (JourneyInviteToken, error) {
+func NewJourneyInviteToken(useMode InviteUseMode, expirationTime time.Time) (JourneyInviteToken, error) {
 	if !useMode.Valid() {
 		return JourneyInviteToken{}, errors.New("invite token use mode must be a known OpenCaravan value")
 	}
@@ -148,7 +219,7 @@ func NewJourneyInviteToken(useMode JourneyInviteUseMode, expirationTime time.Tim
 		UseMode:        useMode,
 		ExpirationTime: expirationTime,
 	}
-	if useMode == JourneyInviteSingleUse {
+	if useMode == InviteSingleUse {
 		token.MaxUses = 1
 	}
 	return token, nil
@@ -228,11 +299,11 @@ func (token JourneyInviteToken) Validate() error {
 		return errors.New("invite token max_uses must be non-negative")
 	}
 	switch token.UseMode {
-	case JourneyInviteSingleUse:
+	case InviteSingleUse:
 		if token.MaxUses > 1 {
 			return errors.New("single-use invite token max_uses must be 0 or 1")
 		}
-	case JourneyInviteMultiUse:
+	case InviteMultiUse:
 		if token.MaxUses == 1 {
 			return errors.New("multi-use invite token max_uses must be 0 or greater than 1")
 		}

@@ -108,7 +108,7 @@ func TestRegistrationModeValid(t *testing.T) {
 	}{
 		{name: "closed", mode: RegistrationClosed, want: true},
 		{name: "invite", mode: RegistrationInvite, want: true},
-		{name: "open", mode: RegistrationOpen, want: true},
+		{name: "open", mode: RegistrationMode("open"), want: false},
 		{name: "unknown", mode: RegistrationMode("unknown"), want: false},
 	}
 
@@ -126,7 +126,7 @@ func TestServerPolicyValidate(t *testing.T) {
 		ProtocolVersion:  ProtocolVersion,
 		ServerURL:        "https://public.spivot.net",
 		DisplayName:      "Public Spivot",
-		RegistrationMode: RegistrationOpen,
+		RegistrationMode: RegistrationInvite,
 		PrivacyURL:       "https://public.spivot.net/privacy",
 	}
 
@@ -149,6 +149,82 @@ func TestServerPolicyValidate(t *testing.T) {
 			policy := valid
 			tt.mutate(&policy)
 			if err := policy.Validate(); err == nil {
+				t.Fatal("Validate() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestInviteScopeValid(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope InviteScope
+		want  bool
+	}{
+		{name: "journey", scope: InviteScopeJourney, want: true},
+		{name: "server registration", scope: InviteScopeServerRegistration, want: true},
+		{name: "unknown", scope: InviteScope("unknown"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.scope.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInviteUseModeValid(t *testing.T) {
+	tests := []struct {
+		name string
+		mode InviteUseMode
+		want bool
+	}{
+		{name: "single use", mode: InviteSingleUse, want: true},
+		{name: "multi use", mode: InviteMultiUse, want: true},
+		{name: "unknown", mode: InviteUseMode("unknown"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mode.Valid(); got != tt.want {
+				t.Fatalf("Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInviteGenerationPermissionsValidate(t *testing.T) {
+	valid := validJourneyInviteGenerationPermissions()
+
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if err := (InviteGenerationPermissions{}).Validate(); err != nil {
+		t.Fatalf("empty Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*InviteGenerationPermissions)
+	}{
+		{name: "missing scopes", mutate: func(p *InviteGenerationPermissions) { p.Scopes = nil }},
+		{name: "missing use modes", mutate: func(p *InviteGenerationPermissions) { p.UseModes = nil }},
+		{name: "invalid scope", mutate: func(p *InviteGenerationPermissions) { p.Scopes[0] = InviteScope("unknown") }},
+		{name: "invalid use mode", mutate: func(p *InviteGenerationPermissions) { p.UseModes[0] = InviteUseMode("unknown") }},
+		{name: "negative uses cap", mutate: func(p *InviteGenerationPermissions) { p.MaxUsesPerInvite = -1 }},
+		{name: "negative lifetime cap", mutate: func(p *InviteGenerationPermissions) { p.MaxLifetimeDays = -1 }},
+		{name: "multi-use with single-use cap", mutate: func(p *InviteGenerationPermissions) { p.MaxUsesPerInvite = 1 }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			permissions := valid
+			permissions.Scopes = append([]InviteScope(nil), valid.Scopes...)
+			permissions.UseModes = append([]InviteUseMode(nil), valid.UseModes...)
+			tt.mutate(&permissions)
+			if err := permissions.Validate(); err == nil {
 				t.Fatal("Validate() error = nil, want error")
 			}
 		})
@@ -277,6 +353,7 @@ func TestUserValidateRejectsInvalidFields(t *testing.T) {
 		{name: "invalid avatar image", mutate: func(u *User) { u.Profile.AvatarImage.ID = "" }},
 		{name: "invalid banner image", mutate: func(u *User) { u.Profile.BannerImage.ContentType = "text/plain" }},
 		{name: "invalid accent color", mutate: func(u *User) { u.Profile.AccentColor = "blue" }},
+		{name: "invalid permissions", mutate: func(u *User) { u.Permissions.InviteGeneration.Scopes[0] = InviteScope("unknown") }},
 		{name: "invalid profile link", mutate: func(u *User) { u.Profile.Links[0].URL = "/relative" }},
 		{name: "missing contact kind", mutate: func(u *User) { u.Profile.Contacts[0].Kind = "" }},
 		{name: "invalid mobile contact", mutate: func(u *User) { u.Profile.Contacts[0].Value = "503-555-1212" }},
@@ -424,12 +501,12 @@ func TestJourneyValidate(t *testing.T) {
 func TestNewJourneyInviteToken(t *testing.T) {
 	expirationTime := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 
-	singleUse, err := NewJourneyInviteToken(JourneyInviteSingleUse, expirationTime)
+	singleUse, err := NewJourneyInviteToken(InviteSingleUse, expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
-	if singleUse.UseMode != JourneyInviteSingleUse {
-		t.Fatalf("UseMode = %q, want %q", singleUse.UseMode, JourneyInviteSingleUse)
+	if singleUse.UseMode != InviteSingleUse {
+		t.Fatalf("UseMode = %q, want %q", singleUse.UseMode, InviteSingleUse)
 	}
 	if singleUse.MaxUses != 1 {
 		t.Fatalf("MaxUses = %d, want 1", singleUse.MaxUses)
@@ -442,7 +519,7 @@ func TestNewJourneyInviteToken(t *testing.T) {
 		t.Fatalf("decoded token length = %d, want %d", len(tokenBytes), journeyInviteTokenBytes)
 	}
 
-	multiUse, err := NewJourneyInviteToken(JourneyInviteMultiUse, expirationTime)
+	multiUse, err := NewJourneyInviteToken(InviteMultiUse, expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
@@ -450,10 +527,10 @@ func TestNewJourneyInviteToken(t *testing.T) {
 		t.Fatalf("MaxUses = %d, want 0 for uncapped multi-use", multiUse.MaxUses)
 	}
 
-	if _, err := NewJourneyInviteToken(JourneyInviteUseMode("unknown"), expirationTime); err == nil {
+	if _, err := NewJourneyInviteToken(InviteUseMode("unknown"), expirationTime); err == nil {
 		t.Fatal("NewJourneyInviteToken() error = nil, want invalid use mode error")
 	}
-	if _, err := NewJourneyInviteToken(JourneyInviteSingleUse, time.Time{}); err == nil {
+	if _, err := NewJourneyInviteToken(InviteSingleUse, time.Time{}); err == nil {
 		t.Fatal("NewJourneyInviteToken() error = nil, want missing expiration_time error")
 	}
 }
@@ -487,8 +564,8 @@ func TestJourneyInviteJSONAndValidate(t *testing.T) {
 	if decoded.Audience != JourneyInviteGroupAudience {
 		t.Fatalf("Audience = %q, want %q", decoded.Audience, JourneyInviteGroupAudience)
 	}
-	if decoded.Token.UseMode != JourneyInviteMultiUse {
-		t.Fatalf("Token.UseMode = %q, want %q", decoded.Token.UseMode, JourneyInviteMultiUse)
+	if decoded.Token.UseMode != InviteMultiUse {
+		t.Fatalf("Token.UseMode = %q, want %q", decoded.Token.UseMode, InviteMultiUse)
 	}
 	if decoded.Links == nil || decoded.Links.WebURL == "" || decoded.Links.AppURL == "" {
 		t.Fatalf("Links = %#v, want web and app URLs", decoded.Links)
@@ -510,11 +587,11 @@ func TestJourneyInviteValidateRejectsInvalidFields(t *testing.T) {
 		{name: "missing integrity", mutate: func(i *JourneyInvite) { i.Integrity = nil }},
 		{name: "malformed token", mutate: func(i *JourneyInvite) { i.Token.Value = "not base64url!" }},
 		{name: "single-use token with too many uses", mutate: func(i *JourneyInvite) {
-			i.Token.UseMode = JourneyInviteSingleUse
+			i.Token.UseMode = InviteSingleUse
 			i.Token.MaxUses = 2
 		}},
 		{name: "multi-use token with single-use cap", mutate: func(i *JourneyInvite) {
-			i.Token.UseMode = JourneyInviteMultiUse
+			i.Token.UseMode = InviteMultiUse
 			i.Token.MaxUses = 1
 		}},
 	}
@@ -540,7 +617,7 @@ func TestJourneyParticipantValidate(t *testing.T) {
 		JourneyID: testJourneyID,
 		UserID:    testUserID,
 		Privileges: JourneyParticipantPrivileges{
-			CanGenerateInvites: true,
+			InviteGeneration: ptr(validJourneyInviteGenerationPermissions()),
 		},
 		JoinTime: time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
 	}
@@ -557,12 +634,19 @@ func TestJourneyParticipantValidate(t *testing.T) {
 		{name: "missing journey id", mutate: func(p *JourneyParticipant) { p.JourneyID = "" }},
 		{name: "missing user id", mutate: func(p *JourneyParticipant) { p.UserID = "" }},
 		{name: "invalid profile", mutate: func(p *JourneyParticipant) { p.Profile = &UserProfile{} }},
+		{name: "invalid privileges", mutate: func(p *JourneyParticipant) { p.Privileges.InviteGeneration.UseModes[0] = InviteUseMode("unknown") }},
 		{name: "missing join time", mutate: func(p *JourneyParticipant) { p.JoinTime = time.Time{} }},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			participant := valid
+			if valid.Privileges.InviteGeneration != nil {
+				permissions := *valid.Privileges.InviteGeneration
+				permissions.Scopes = append([]InviteScope(nil), permissions.Scopes...)
+				permissions.UseModes = append([]InviteUseMode(nil), permissions.UseModes...)
+				participant.Privileges.InviteGeneration = &permissions
+			}
 			tt.mutate(&participant)
 			if err := participant.Validate(); err == nil {
 				t.Fatal("Validate() error = nil, want error")
@@ -672,6 +756,14 @@ func validPositionSample() PositionSample {
 func validUser() User {
 	return User{
 		ID: testUserID,
+		Permissions: &UserPermissions{
+			InviteGeneration: ptr(InviteGenerationPermissions{
+				Scopes:           []InviteScope{InviteScopeServerRegistration},
+				UseModes:         []InviteUseMode{InviteSingleUse},
+				MaxLifetimeDays:  30,
+				MaxUsesPerInvite: 1,
+			}),
+		},
 		Profile: UserProfile{
 			DisplayName: "Riley",
 			AvatarImage: ptr(validAvatarImageRef()),
@@ -718,6 +810,15 @@ func validVehicle() Vehicle {
 		Color:       "blue",
 		AvatarImage: ptr(validVehicleAvatarImageRef()),
 		BannerImage: ptr(validBannerImageRef()),
+	}
+}
+
+func validJourneyInviteGenerationPermissions() InviteGenerationPermissions {
+	return InviteGenerationPermissions{
+		Scopes:           []InviteScope{InviteScopeJourney},
+		UseModes:         []InviteUseMode{InviteSingleUse, InviteMultiUse},
+		MaxUsesPerInvite: 25,
+		MaxLifetimeDays:  7,
 	}
 }
 
@@ -773,7 +874,7 @@ func validJourney() Journey {
 				UserID:    testUserID,
 				Profile:   &profile,
 				Privileges: JourneyParticipantPrivileges{
-					CanGenerateInvites: true,
+					InviteGeneration: ptr(validJourneyInviteGenerationPermissions()),
 				},
 				JoinTime: creationTime,
 			},
@@ -806,7 +907,7 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 	t.Helper()
 
 	expirationTime := time.Date(2026, 5, 24, 12, 30, 0, 0, time.UTC)
-	token, err := NewJourneyInviteToken(JourneyInviteMultiUse, expirationTime)
+	token, err := NewJourneyInviteToken(InviteMultiUse, expirationTime)
 	if err != nil {
 		t.Fatalf("NewJourneyInviteToken() error = %v", err)
 	}
