@@ -14,11 +14,13 @@ const (
 
 // PositionSample is one captured participant position update.
 type PositionSample struct {
-	JourneyID              string    `json:"journey_id"`
-	ParticipantID          string    `json:"participant_id"`
-	DeviceID               string    `json:"device_id,omitempty"`
+	JourneyID              UUID      `json:"journey_id"`
+	SegmentID              UUID      `json:"segment_id"`
+	SegmentVehicleID       UUID      `json:"segment_vehicle_id"`
+	JourneyParticipantID   UUID      `json:"journey_participant_id"`
+	ClientAppID            UUID      `json:"client_app_id"`
 	ClientSequence         int64     `json:"client_sequence"`
-	CapturedAt             time.Time `json:"captured_at"`
+	CaptureTime            time.Time `json:"capture_time"`
 	LatitudeE7             int32     `json:"latitude_e7"`
 	LongitudeE7            int32     `json:"longitude_e7"`
 	AltitudeMM             *int64    `json:"altitude_mm,omitempty"`
@@ -32,14 +34,29 @@ type PositionSample struct {
 	ClientMetadataRevision string    `json:"client_metadata_revision,omitempty"`
 }
 
-// Validate reports whether the sample contains a valid sequence, capture time,
-// and latitude/longitude pair.
+// Validate reports whether the sample contains valid object identities,
+// sequence data, capture time, and latitude/longitude pair.
 func (s PositionSample) Validate() error {
+	if !s.JourneyID.Valid() {
+		return errors.New("journey_id must be a valid UUID")
+	}
+	if !s.SegmentID.Valid() {
+		return errors.New("segment_id must be a valid UUID")
+	}
+	if !s.SegmentVehicleID.Valid() {
+		return errors.New("segment_vehicle_id must be a valid UUID")
+	}
+	if !s.JourneyParticipantID.Valid() {
+		return errors.New("journey_participant_id must be a valid UUID")
+	}
+	if !s.ClientAppID.Valid() {
+		return errors.New("client_app_id must be a valid UUID")
+	}
 	if s.ClientSequence < 0 {
 		return errors.New("client sequence must be non-negative")
 	}
-	if s.CapturedAt.IsZero() {
-		return errors.New("captured_at must be set")
+	if s.CaptureTime.IsZero() {
+		return errors.New("capture_time must be set")
 	}
 	if s.LatitudeE7 < minLatitudeE7 || s.LatitudeE7 > maxLatitudeE7 {
 		return errors.New("latitude_e7 out of range")

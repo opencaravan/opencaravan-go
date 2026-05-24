@@ -12,8 +12,6 @@ wire-facing structs, and validation helpers that can be used by servers,
 clients, and conformance tests. It does not contain storage engines, server
 internals, auth persistence, or deployment tooling.
 
-## Status
-
 OpenCaravan is in early draft. This module starts at `v0` and may change while
 Spivot Server and the OpenCaravan specification are built together.
 
@@ -23,44 +21,26 @@ Spivot Server and the OpenCaravan specification are built together.
 go get github.com/opencaravan/opencaravan-go
 ```
 
-## Usage
+## Docs
 
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-
-	opencaravan "github.com/opencaravan/opencaravan-go"
-)
-
-func main() {
-	invite := opencaravan.NewJourneyInvitePayload(
-		"https://public.spivot.net",
-		"journey_123",
-		"opaque-token",
-		time.Now().Add(30*time.Minute),
-	)
-
-	fmt.Println(invite.Type)
-}
-```
+- [Protocol model](docs/protocol-model.md) describes the current draft objects,
+  ID lifecycle, image resources, invites, and a complete usage example.
+- [Go Reference](https://pkg.go.dev/github.com/opencaravan/opencaravan-go)
+  exposes the package API surface and Godoc.
 
 ## Package Scope
 
-The package currently includes draft types for:
-
-- server policy and retention capability advertisements
-- per-journey policy snapshots
-- journey, participant, sharing, and vehicle vocabulary
-- portable journey invite payloads
-- position telemetry samples
+The package currently includes draft types for server policy advertisements,
+invite-governed registration, private journeys, users, profile projections,
+vehicles, segments, participant-shared media, journey invites, and position
+telemetry samples.
 
 Spivot Server is the reference backend implementation for OpenCaravan and will
 consume this module as the protocol surface matures.
 
 ## Development
+
+All local workflows go through [just](https://just.systems/).
 
 ```bash
 just ci
