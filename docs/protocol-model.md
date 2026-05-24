@@ -125,7 +125,7 @@ func main() {
 		panic(err)
 	}
 
-	token, err := opencaravan.NewJourneyInviteToken(time.Now().Add(2 * time.Hour))
+	token, err := opencaravan.NewInviteToken(time.Now().Add(2 * time.Hour))
 	if err != nil {
 		panic(err)
 	}
@@ -168,8 +168,8 @@ func serverAssignedID() opencaravan.UUID {
 	return id
 }
 
-func serverSignedInviteIntegrity(invite opencaravan.JourneyInvite) *opencaravan.JourneyInviteIntegrity {
-	return &opencaravan.JourneyInviteIntegrity{
+func serverSignedInviteIntegrity(invite opencaravan.JourneyInvite) *opencaravan.Integrity {
+	return &opencaravan.Integrity{
 		Algorithm: "ed25519",
 		KeyID:     "server-key-1",
 		Signature: "base64url-signature",

@@ -530,23 +530,23 @@ func TestJourneyValidate(t *testing.T) {
 	}
 }
 
-func TestNewJourneyInviteToken(t *testing.T) {
+func TestNewInviteToken(t *testing.T) {
 	expirationTime := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 
-	token, err := NewJourneyInviteToken(expirationTime)
+	token, err := NewInviteToken(expirationTime)
 	if err != nil {
-		t.Fatalf("NewJourneyInviteToken() error = %v", err)
+		t.Fatalf("NewInviteToken() error = %v", err)
 	}
 	tokenBytes, err := base64.RawURLEncoding.DecodeString(token.Value)
 	if err != nil {
 		t.Fatalf("DecodeString() error = %v", err)
 	}
-	if len(tokenBytes) != journeyInviteTokenBytes {
-		t.Fatalf("decoded token length = %d, want %d", len(tokenBytes), journeyInviteTokenBytes)
+	if len(tokenBytes) != InviteTokenBytes {
+		t.Fatalf("decoded token length = %d, want %d", len(tokenBytes), InviteTokenBytes)
 	}
 
-	if _, err := NewJourneyInviteToken(time.Time{}); err == nil {
-		t.Fatal("NewJourneyInviteToken() error = nil, want missing expiration_time error")
+	if _, err := NewInviteToken(time.Time{}); err == nil {
+		t.Fatal("NewInviteToken() error = nil, want missing expiration_time error")
 	}
 }
 
@@ -924,9 +924,9 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 	t.Helper()
 
 	expirationTime := time.Date(2026, 5, 24, 12, 30, 0, 0, time.UTC)
-	token, err := NewJourneyInviteToken(expirationTime)
+	token, err := NewInviteToken(expirationTime)
 	if err != nil {
-		t.Fatalf("NewJourneyInviteToken() error = %v", err)
+		t.Fatalf("NewInviteToken() error = %v", err)
 	}
 
 	invite := NewJourneyInvite("https://public.spivot.net", testJourneyID, token, 10)
@@ -945,7 +945,7 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 		AvatarImage: ptr(validAvatarImageRef()),
 		BannerImage: ptr(validBannerImageRef()),
 	}
-	invite.Integrity = &JourneyInviteIntegrity{
+	invite.Integrity = &Integrity{
 		Algorithm: "ed25519",
 		KeyID:     "server-key-1",
 		Signature: "base64url-signature",

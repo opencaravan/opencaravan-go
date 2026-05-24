@@ -1,14 +1,10 @@
 package opencaravan
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"time"
 )
-
-const journeyInviteTokenBytes = 32
 
 // JourneyInviteType is the canonical type value for journey invites.
 const JourneyInviteType = "opencaravan.journey_invite"
@@ -85,12 +81,12 @@ func (permissions InviteGenerationPermissions) Validate() error {
 // token is the secret capability. Integrity records how the issuing server made
 // the rest of the object tamper-evident.
 type JourneyInvite struct {
-	Type      string             `json:"type"`
-	Version   int                `json:"version"`
-	ID        UUID               `json:"id"`
-	ServerURL string             `json:"server_url"`
-	JourneyID UUID               `json:"journey_id"`
-	Token     JourneyInviteToken `json:"token"`
+	Type      string      `json:"type"`
+	Version   int         `json:"version"`
+	ID        UUID        `json:"id"`
+	ServerURL string      `json:"server_url"`
+	JourneyID UUID        `json:"journey_id"`
+	Token     InviteToken `json:"token"`
 	// MaxRedemptions is the maximum number of successful token redemptions.
 	// Zero means the issuing server has not capped redemptions.
 	MaxRedemptions                int                        `json:"max_redemptions"`
@@ -100,14 +96,7 @@ type JourneyInvite struct {
 	DisplayName                   string                     `json:"display_name,omitempty"`
 	Links                         *JourneyInviteLinks        `json:"links,omitempty"`
 	Presentation                  *JourneyInvitePresentation `json:"presentation,omitempty"`
-	Integrity                     *JourneyInviteIntegrity    `json:"integrity"`
-}
-
-// JourneyInviteToken is the server-issued secret capability carried by a
-// journey invite.
-type JourneyInviteToken struct {
-	Value          string    `json:"value"`
-	ExpirationTime time.Time `json:"expiration_time"`
+	Integrity                     *Integrity                 `json:"integrity"`
 }
 
 // JourneyInviteLinks describes the URL forms an app or server can use to
@@ -129,44 +118,12 @@ type JourneyInvitePresentation struct {
 	Metadata    map[string]any    `json:"metadata,omitempty"`
 }
 
-// JourneyInviteIntegrity describes the signature or message authentication
-// data that makes a journey invite tamper-evident.
-//
-// Signature covers the canonical invite object excluding the Integrity field.
-// KeyID identifies the issuer key a client can use to verify the signature.
-type JourneyInviteIntegrity struct {
-	Algorithm string `json:"algorithm"`
-	KeyID     string `json:"key_id,omitempty"`
-	Signature string `json:"signature"`
-}
-
-// NewJourneyInviteToken returns a cryptographically random invite token.
-//
-// The token value contains 256 bits of randomness encoded as unpadded base64url
-// text so it can travel safely in URLs, QR codes, JSON, and platform share
-// payloads.
-func NewJourneyInviteToken(expirationTime time.Time) (JourneyInviteToken, error) {
-	if expirationTime.IsZero() {
-		return JourneyInviteToken{}, errors.New("invite token expiration_time must be set")
-	}
-
-	b := make([]byte, journeyInviteTokenBytes)
-	if _, err := rand.Read(b); err != nil {
-		return JourneyInviteToken{}, fmt.Errorf("read random invite token bytes: %w", err)
-	}
-
-	return JourneyInviteToken{
-		Value:          base64.RawURLEncoding.EncodeToString(b),
-		ExpirationTime: expirationTime,
-	}, nil
-}
-
 // NewJourneyInvite returns a journey invite with the current type and version
 // fields populated.
 //
 // maxRedemptions is copied to MaxRedemptions. Zero means the issuing server has
 // not capped redemptions.
-func NewJourneyInvite(serverURL string, journeyID UUID, token JourneyInviteToken, maxRedemptions int) JourneyInvite {
+func NewJourneyInvite(serverURL string, journeyID UUID, token InviteToken, maxRedemptions int) JourneyInvite {
 	return JourneyInvite{
 		Type:           JourneyInviteType,
 		Version:        JourneyInviteVersion,
@@ -224,24 +181,6 @@ func (invite JourneyInvite) Validate() error {
 	return nil
 }
 
-// Validate reports whether token contains a secret value and expiration.
-func (token JourneyInviteToken) Validate() error {
-	if token.Value == "" {
-		return errors.New("invite token value must be set")
-	}
-	tokenBytes, err := base64.RawURLEncoding.DecodeString(token.Value)
-	if err != nil {
-		return fmt.Errorf("invite token value must be unpadded base64url: %w", err)
-	}
-	if len(tokenBytes) != journeyInviteTokenBytes {
-		return fmt.Errorf("invite token must contain %d random bytes", journeyInviteTokenBytes)
-	}
-	if token.ExpirationTime.IsZero() {
-		return errors.New("invite token expiration_time must be set")
-	}
-	return nil
-}
-
 // Validate reports whether presentation contains valid optional image
 // resources.
 func (presentation JourneyInvitePresentation) Validate() error {
@@ -254,18 +193,6 @@ func (presentation JourneyInvitePresentation) Validate() error {
 		if err := presentation.BannerImage.Validate(); err != nil {
 			return fmt.Errorf("banner_image: %w", err)
 		}
-	}
-	return nil
-}
-
-// Validate reports whether integrity contains the fields needed to verify a
-// signed invite object.
-func (integrity JourneyInviteIntegrity) Validate() error {
-	if integrity.Algorithm == "" {
-		return errors.New("algorithm must be set")
-	}
-	if integrity.Signature == "" {
-		return errors.New("signature must be set")
 	}
 	return nil
 }
