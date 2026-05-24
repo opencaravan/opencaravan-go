@@ -1386,6 +1386,8 @@ func TestSessionResponseJSONAndValidate(t *testing.T) {
 		{name: "wrong type", mutate: func(r *SessionResponse) { r.Type = "wrong" }},
 		{name: "wrong version", mutate: func(r *SessionResponse) { r.Version = 99 }},
 		{name: "empty macaroon", mutate: func(r *SessionResponse) { r.Macaroon = "" }},
+		{name: "padded base64 macaroon", mutate: func(r *SessionResponse) { r.Macaroon = "AAAA====" }},
+		{name: "non-base64 macaroon", mutate: func(r *SessionResponse) { r.Macaroon = "not!base64@all" }},
 		{name: "zero expiration", mutate: func(r *SessionResponse) { r.ExpirationTime = time.Time{} }},
 	}
 	for _, tt := range tests {

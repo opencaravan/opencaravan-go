@@ -1,6 +1,7 @@
 package opencaravan
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -103,11 +104,13 @@ func (r SessionRequest) Validate() error {
 // SessionResponse is the server's reply to a SessionRequest, carrying the
 // issued macaroon and its expiration time.
 //
-// Macaroon is the base64-encoded macaroon serialization defined by the
-// macaroon spec (https://research.google/pubs/macaroons-cookies-with-contextual-caveats-for-decentralized-authorization/).
-// OpenCaravan defines only the caveat predicate namespace used inside the
-// macaroon (see CaveatKind and the CaveatX builders); the macaroon binary
-// format itself is out of scope for this protocol package.
+// Macaroon carries the binary macaroon serialization defined by the macaroon
+// spec (https://research.google/pubs/macaroons-cookies-with-contextual-caveats-for-decentralized-authorization/)
+// encoded as unpadded base64url so it travels safely in HTTP headers, JSON
+// payloads, and URL query strings without escaping. OpenCaravan defines only
+// the caveat predicate namespace used inside the macaroon (see CaveatKind and
+// the CaveatX builders); the macaroon binary format itself is out of scope
+// for this protocol package.
 //
 // The ExpirationTime field duplicates the time<T caveat inside the macaroon
 // so clients can show expiry without having to parse the macaroon body.
@@ -129,6 +132,9 @@ func (r SessionResponse) Validate() error {
 	}
 	if strings.TrimSpace(r.Macaroon) == "" {
 		return errors.New("macaroon must be set")
+	}
+	if _, err := base64.RawURLEncoding.DecodeString(r.Macaroon); err != nil {
+		return fmt.Errorf("macaroon must be unpadded base64url: %w", err)
 	}
 	if r.ExpirationTime.IsZero() {
 		return errors.New("expiration_time must be set")
