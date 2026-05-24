@@ -59,6 +59,20 @@ func main() {
 		WidthPixels:  512,
 		HeightPixels: 512,
 	}
+	journeyAvatarImage := &opencaravan.ImageResourceRef{
+		ID:           serverAssignedID(),
+		Digest:       "sha256:...",
+		ContentType:  "image/png",
+		WidthPixels:  512,
+		HeightPixels: 512,
+	}
+	journeyBannerImage := &opencaravan.ImageResourceRef{
+		ID:           serverAssignedID(),
+		Digest:       "sha256:...",
+		ContentType:  "image/jpeg",
+		WidthPixels:  1200,
+		HeightPixels: 400,
+	}
 	user := opencaravan.User{
 		ID: serverAssignedID(),
 		Permissions: &opencaravan.UserPermissions{
@@ -97,6 +111,8 @@ func main() {
 		ID:              serverAssignedID(),
 		OriginServerURL: "https://public.spivot.net",
 		Title:           "Sunday Ridge Drive",
+		AvatarImage:     journeyAvatarImage,
+		BannerImage:     journeyBannerImage,
 		State:           opencaravan.JourneyPlanned,
 		DeletionTime:    &deletionTime,
 		Features: opencaravan.JourneyFeatures{
@@ -140,7 +156,6 @@ func main() {
 		25,
 	)
 	invite.ID = serverAssignedID()
-	invite.Audience = opencaravan.JourneyInviteGroupAudience
 	invite.CreatedByJourneyParticipantID = coordinator.ID
 	invite.CreationTime = creationTime
 	invite.PolicyHash = "sha256:..."
@@ -148,6 +163,12 @@ func main() {
 	invite.Links = &opencaravan.JourneyInviteLinks{
 		WebURL: "https://public.spivot.net/invites/" + token.Value,
 		AppURL: "opencaravan://invite?token=" + token.Value,
+	}
+	invite.Presentation = &opencaravan.JourneyInvitePresentation{
+		Title:       "Join " + journey.Title,
+		Summary:     "OpenCaravan journey invite",
+		AvatarImage: journey.AvatarImage,
+		BannerImage: journey.BannerImage,
 	}
 	invite.Integrity = serverSignedInviteIntegrity(invite)
 
@@ -199,10 +220,10 @@ participants. Clients may mirror one profile across servers or tailor profile
 details for each server.
 
 `ImageResourceRef` is the reusable in-protocol handle for server-accepted image
-resources. User profiles and vehicles can both expose `AvatarImage` for compact
-or map representations and `BannerImage` for wider presentation surfaces. The
-reference does not carry a URL; clients derive the server fetch path from the
-resource ID and use the digest as a cache and integrity key.
+resources. User profiles, journeys, and vehicles can expose `AvatarImage` for
+compact or map representations and `BannerImage` for wider presentation
+surfaces. The reference does not carry a URL; clients derive the server fetch
+path from the resource ID and use the digest as a cache and integrity key.
 
 `HexColor` is the protocol type for opaque sRGB UI colors such as profile
 accent colors. It accepts `#RRGGBB`, rejects alpha, and serializes as canonical
@@ -231,14 +252,15 @@ private journey. A journey participant may carry a profile projection so clients
 can render the display name, avatar, accent color, public links, and opt-in
 contact methods that are visible to other people sharing the journey.
 
-For a one-person private-message journey invite, use
-`JourneyInviteIndividualAudience` and `MaxRedemptions` set to `1`. For a link
-posted to a group chat or web forum, use `JourneyInviteGroupAudience` and set
-`MaxRedemptions` to the server-enforced redemption cap. A value of `0` means
-the issuing server has not capped redemptions. `WebURL` is the browser entry
-point that lets the server process or redeem the invite; `AppURL` is the deep
-link a server or client can use to hand off to a registered OpenCaravan client
-app.
+Journey invites are neutral capability objects. For a one-person private-message
+journey invite, set `MaxRedemptions` to `1`. For a link posted to a group chat
+or web forum, set `MaxRedemptions` to the server-enforced redemption cap. A
+value of `0` means the issuing server has not capped redemptions. `WebURL` is
+the browser entry point that lets the server process or redeem the invite;
+`AppURL` is the deep link a server or client can use to hand off to a registered
+OpenCaravan client app. `JourneyInvitePresentation` can carry title, summary,
+avatar, and banner snapshots for rich share surfaces before the client has
+fetched the journey.
 
 ## Package Scope
 
@@ -248,11 +270,12 @@ The package currently includes draft types for:
 - per-journey deletion timestamps and feature flags
 - private invite-only journeys, users, journey participants, client apps,
   segments, and vehicles
-- in-protocol image resource references for user and vehicle presentation
+- in-protocol image resource references for user, journey, and vehicle
+  presentation
 - invite-governed registration posture and scoped invite generation
   permissions
-- portable journey invites with redemption caps, integrity metadata, and
-  web/app link forms
+- portable journey invites with redemption caps, integrity metadata,
+  presentation image refs, and web/app link forms
 - participant-shared journey media
 - position telemetry samples
 

@@ -43,10 +43,16 @@ func (s JourneyState) Valid() bool {
 // through server-issued invite tokens, and invite creation is governed by
 // each attached participant's privileges.
 type Journey struct {
-	ID               UUID                 `json:"id"`
-	OriginServerURL  string               `json:"origin_server_url"`
-	Title            string               `json:"title"`
-	Description      string               `json:"description,omitempty"`
+	ID              UUID   `json:"id"`
+	OriginServerURL string `json:"origin_server_url"`
+	Title           string `json:"title"`
+	Description     string `json:"description,omitempty"`
+	// AvatarImage is the image clients can use for compact journey
+	// representations, including invite previews.
+	AvatarImage *ImageResourceRef `json:"avatar_image,omitempty"`
+	// BannerImage is an optional wide image clients can use in richer journey
+	// views and invite previews.
+	BannerImage      *ImageResourceRef    `json:"banner_image,omitempty"`
 	State            JourneyState         `json:"state"`
 	DeletionTime     *time.Time           `json:"deletion_time,omitempty"`
 	Features         JourneyFeatures      `json:"features"`
@@ -207,6 +213,16 @@ func (journey Journey) Validate() error {
 	}
 	if !journey.State.Valid() {
 		return errors.New("state must be a known OpenCaravan value")
+	}
+	if journey.AvatarImage != nil {
+		if err := journey.AvatarImage.Validate(); err != nil {
+			return fmt.Errorf("avatar_image: %w", err)
+		}
+	}
+	if journey.BannerImage != nil {
+		if err := journey.BannerImage.Validate(); err != nil {
+			return fmt.Errorf("banner_image: %w", err)
+		}
 	}
 	if journey.DeletionTime != nil && journey.DeletionTime.IsZero() {
 		return errors.New("deletion_time must be a non-zero time")

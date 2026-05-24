@@ -77,32 +77,6 @@ func (permissions InviteGenerationPermissions) Validate() error {
 	return nil
 }
 
-// JourneyInviteAudience describes the expected sharing pattern for an invite.
-//
-// Audience helps clients choose good presentation and warning language. The
-// server still enforces actual redemption behavior through MaxRedemptions and
-// any server-side policy tied to the invite.
-type JourneyInviteAudience string
-
-const (
-	// JourneyInviteGroupAudience means the invite is intended for a group chat,
-	// web forum, or other place where multiple people may redeem it.
-	JourneyInviteGroupAudience JourneyInviteAudience = "group"
-	// JourneyInviteIndividualAudience means the invite is intended for one
-	// prospective participant through a private message or direct share.
-	JourneyInviteIndividualAudience JourneyInviteAudience = "individual"
-)
-
-// Valid reports whether the audience is a known OpenCaravan value.
-func (a JourneyInviteAudience) Valid() bool {
-	switch a {
-	case JourneyInviteGroupAudience, JourneyInviteIndividualAudience:
-		return true
-	default:
-		return false
-	}
-}
-
 // JourneyInvite is a portable, integrity-protected invitation to a private
 // journey.
 //
@@ -120,7 +94,6 @@ type JourneyInvite struct {
 	// MaxRedemptions is the maximum number of successful token redemptions.
 	// Zero means the issuing server has not capped redemptions.
 	MaxRedemptions                int                        `json:"max_redemptions"`
-	Audience                      JourneyInviteAudience      `json:"audience"`
 	CreatedByJourneyParticipantID UUID                       `json:"created_by_journey_participant_id"`
 	CreationTime                  time.Time                  `json:"creation_time"`
 	PolicyHash                    string                     `json:"policy_hash"`
@@ -147,10 +120,13 @@ type JourneyInviteLinks struct {
 // JourneyInvitePresentation contains display hints for rich platform-native
 // invite sharing.
 type JourneyInvitePresentation struct {
-	Title    string         `json:"title,omitempty"`
-	Summary  string         `json:"summary,omitempty"`
-	ImageURL string         `json:"image_url,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Title   string `json:"title,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	// AvatarImage is the compact image clients can use in invite previews.
+	AvatarImage *ImageResourceRef `json:"avatar_image,omitempty"`
+	// BannerImage is the wide image clients can use in richer invite previews.
+	BannerImage *ImageResourceRef `json:"banner_image,omitempty"`
+	Metadata    map[string]any    `json:"metadata,omitempty"`
 }
 
 // JourneyInviteIntegrity describes the signature or message authentication
@@ -225,9 +201,6 @@ func (invite JourneyInvite) Validate() error {
 	if invite.MaxRedemptions < 0 {
 		return errors.New("max_redemptions must be non-negative")
 	}
-	if !invite.Audience.Valid() {
-		return errors.New("audience must be a known OpenCaravan value")
-	}
 	if !invite.CreatedByJourneyParticipantID.Valid() {
 		return errors.New("created_by_journey_participant_id must be a valid UUID")
 	}
@@ -239,6 +212,11 @@ func (invite JourneyInvite) Validate() error {
 	}
 	if invite.Integrity == nil {
 		return errors.New("integrity must be set")
+	}
+	if invite.Presentation != nil {
+		if err := invite.Presentation.Validate(); err != nil {
+			return fmt.Errorf("presentation: %w", err)
+		}
 	}
 	if err := invite.Integrity.Validate(); err != nil {
 		return fmt.Errorf("integrity: %w", err)
@@ -260,6 +238,22 @@ func (token JourneyInviteToken) Validate() error {
 	}
 	if token.ExpirationTime.IsZero() {
 		return errors.New("invite token expiration_time must be set")
+	}
+	return nil
+}
+
+// Validate reports whether presentation contains valid optional image
+// resources.
+func (presentation JourneyInvitePresentation) Validate() error {
+	if presentation.AvatarImage != nil {
+		if err := presentation.AvatarImage.Validate(); err != nil {
+			return fmt.Errorf("avatar_image: %w", err)
+		}
+	}
+	if presentation.BannerImage != nil {
+		if err := presentation.BannerImage.Validate(); err != nil {
+			return fmt.Errorf("banner_image: %w", err)
+		}
 	}
 	return nil
 }

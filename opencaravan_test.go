@@ -494,6 +494,16 @@ func TestJourneyValidate(t *testing.T) {
 		{name: "missing origin server", mutate: func(j *Journey) { j.OriginServerURL = "" }},
 		{name: "missing title", mutate: func(j *Journey) { j.Title = "" }},
 		{name: "unknown state", mutate: func(j *Journey) { j.State = JourneyState("unknown") }},
+		{name: "invalid avatar image", mutate: func(j *Journey) {
+			invalid := validAvatarImageRef()
+			invalid.ID = ""
+			j.AvatarImage = &invalid
+		}},
+		{name: "invalid banner image", mutate: func(j *Journey) {
+			invalid := validBannerImageRef()
+			invalid.ContentType = "application/json"
+			j.BannerImage = &invalid
+		}},
 		{name: "zero deletion time", mutate: func(j *Journey) { j.DeletionTime = ptr(time.Time{}) }},
 		{name: "missing creation time", mutate: func(j *Journey) { j.CreationTime = time.Time{} }},
 		{name: "deletion before creation", mutate: func(j *Journey) {
@@ -566,14 +576,15 @@ func TestJourneyInviteJSONAndValidate(t *testing.T) {
 	if decoded.JourneyID != testJourneyID {
 		t.Fatalf("JourneyID = %q, want %q", decoded.JourneyID, testJourneyID)
 	}
-	if decoded.Audience != JourneyInviteGroupAudience {
-		t.Fatalf("Audience = %q, want %q", decoded.Audience, JourneyInviteGroupAudience)
-	}
 	if decoded.MaxRedemptions != 10 {
 		t.Fatalf("MaxRedemptions = %d, want 10", decoded.MaxRedemptions)
 	}
 	if decoded.Links == nil || decoded.Links.WebURL == "" || decoded.Links.AppURL == "" {
 		t.Fatalf("Links = %#v, want web and app URLs", decoded.Links)
+	}
+	if decoded.Presentation == nil || decoded.Presentation.AvatarImage == nil ||
+		decoded.Presentation.AvatarImage.ID != testAvatarImageID {
+		t.Fatalf("Presentation.AvatarImage = %#v, want ID %q", decoded.Presentation, testAvatarImageID)
 	}
 }
 
@@ -586,12 +597,16 @@ func TestJourneyInviteValidateRejectsInvalidFields(t *testing.T) {
 	}{
 		{name: "missing invite id", mutate: func(i *JourneyInvite) { i.ID = "" }},
 		{name: "missing server url", mutate: func(i *JourneyInvite) { i.ServerURL = "" }},
-		{name: "unknown audience", mutate: func(i *JourneyInvite) { i.Audience = JourneyInviteAudience("unknown") }},
 		{name: "missing creator membership", mutate: func(i *JourneyInvite) { i.CreatedByJourneyParticipantID = "" }},
 		{name: "missing policy hash", mutate: func(i *JourneyInvite) { i.PolicyHash = "" }},
 		{name: "missing integrity", mutate: func(i *JourneyInvite) { i.Integrity = nil }},
 		{name: "malformed token", mutate: func(i *JourneyInvite) { i.Token.Value = "not base64url!" }},
 		{name: "negative max redemptions", mutate: func(i *JourneyInvite) { i.MaxRedemptions = -1 }},
+		{name: "invalid presentation avatar image", mutate: func(i *JourneyInvite) {
+			invalid := validAvatarImageRef()
+			invalid.Digest = ""
+			i.Presentation = &JourneyInvitePresentation{AvatarImage: &invalid}
+		}},
 	}
 
 	for _, tt := range tests {
@@ -861,6 +876,8 @@ func validJourney() Journey {
 		ID:              testJourneyID,
 		OriginServerURL: "https://public.spivot.net",
 		Title:           "Sunday Ridge Drive",
+		AvatarImage:     ptr(validAvatarImageRef()),
+		BannerImage:     ptr(validBannerImageRef()),
 		State:           JourneyPlanned,
 		DeletionTime:    &deletionTime,
 		Features: JourneyFeatures{
@@ -914,7 +931,6 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 
 	invite := NewJourneyInvite("https://public.spivot.net", testJourneyID, token, 10)
 	invite.ID = testInviteID
-	invite.Audience = JourneyInviteGroupAudience
 	invite.CreatedByJourneyParticipantID = testMembershipID
 	invite.CreationTime = time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
 	invite.PolicyHash = "sha256:abc"
@@ -924,8 +940,10 @@ func validJourneyInvite(t *testing.T) JourneyInvite {
 		AppURL: "opencaravan://invite?token=" + token.Value,
 	}
 	invite.Presentation = &JourneyInvitePresentation{
-		Title:   "Join Sunday Ridge Drive",
-		Summary: "OpenCaravan group drive invite",
+		Title:       "Join Sunday Ridge Drive",
+		Summary:     "OpenCaravan journey invite",
+		AvatarImage: ptr(validAvatarImageRef()),
+		BannerImage: ptr(validBannerImageRef()),
 	}
 	invite.Integrity = &JourneyInviteIntegrity{
 		Algorithm: "ed25519",
