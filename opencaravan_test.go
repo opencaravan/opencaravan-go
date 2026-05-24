@@ -1146,6 +1146,8 @@ func TestKeyAttestationValidate(t *testing.T) {
 		{name: "unknown format accepted", attestation: KeyAttestation{Format: KeyAttestationFormat("future-platform"), Data: "AAAA"}, wantErr: false},
 		{name: "missing format", attestation: KeyAttestation{Data: "AAAA"}, wantErr: true},
 		{name: "missing data", attestation: KeyAttestation{Format: KeyAttestationFormatAppleAppAttest}, wantErr: true},
+		{name: "unpadded data", attestation: KeyAttestation{Format: KeyAttestationFormatAppleAppAttest, Data: "AAA"}, wantErr: true},
+		{name: "non-base64 data", attestation: KeyAttestation{Format: KeyAttestationFormatAppleAppAttest, Data: "not!base64@!="}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

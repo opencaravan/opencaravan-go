@@ -1,6 +1,7 @@
 package opencaravan
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -108,20 +109,27 @@ func (f KeyAttestationFormat) Valid() bool {
 // hardware-backed storage omit KeyAttestation entirely.
 type KeyAttestation struct {
 	Format KeyAttestationFormat `json:"format"`
-	// Data is base64-encoded format-specific payload. Encoding is base64
-	// rather than base64url so existing attestation libraries on each platform
-	// can ingest it without re-encoding.
+	// Data carries a format-specific payload encoded as RFC 4648 standard
+	// base64 with padding. Standard base64 (rather than base64url) matches
+	// the conventions of the major attestation toolchains on iOS and
+	// Android; WebAuthn callers that produce base64url-encoded attestations
+	// re-encode at this protocol boundary.
 	Data string `json:"data"`
 }
 
-// Validate reports whether attestation has a non-empty format and data
-// payload. Unknown formats are accepted at the protocol layer.
+// Validate reports whether attestation has a non-empty format and a
+// base64-shaped data payload. Unknown formats are accepted at the protocol
+// layer; format-specific verification of the decoded bytes is
+// implementation-level.
 func (a KeyAttestation) Validate() error {
 	if strings.TrimSpace(string(a.Format)) == "" {
 		return errors.New("format must be set")
 	}
 	if strings.TrimSpace(a.Data) == "" {
 		return errors.New("data must be set")
+	}
+	if _, err := base64.StdEncoding.DecodeString(a.Data); err != nil {
+		return fmt.Errorf("data must be RFC 4648 standard base64 (padded): %w", err)
 	}
 	return nil
 }
