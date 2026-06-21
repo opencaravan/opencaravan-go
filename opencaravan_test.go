@@ -877,14 +877,18 @@ func validUser() User {
 
 func validVehicle() Vehicle {
 	return Vehicle{
-		ID:          testVehicleID,
-		DisplayName: "Blue Bronco",
-		Make:        "Ford",
-		Model:       "Bronco",
-		ModelYear:   2026,
-		Color:       "blue",
-		AvatarImage: ptr(validVehicleAvatarImageRef()),
-		BannerImage: ptr(validBannerImageRef()),
+		ID:                testVehicleID,
+		DisplayName:       "Blue Bronco",
+		Make:              "Ford",
+		Model:             "Bronco",
+		ModelYear:         2026,
+		Color:             "blue",
+		AvatarImage:       ptr(validVehicleAvatarImageRef()),
+		BannerImage:       ptr(validBannerImageRef()),
+		OwnerUserID:       testUserID,
+		Capacity:          5,
+		AuthorizedDrivers: []UUID{testUserID},
+		ACLVersion:        1,
 	}
 }
 

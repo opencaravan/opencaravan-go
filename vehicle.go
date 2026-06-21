@@ -7,7 +7,19 @@ import (
 )
 
 // Vehicle describes a physical vehicle that can carry one or more participants
-// during a journey segment.
+// during a journey segment, together with the cert-backed metadata that gates
+// who may drive it and who may edit the record.
+//
+// The record is owner-signed: OwnerUserID names the user whose enrolled client
+// cert produced Integrity, and the signature covers the canonical encoding of
+// every field except Integrity itself. Verifiers reproduce the canonical bytes
+// via CanonicalEncoding and check the signature against the owner's enrolled
+// cert.
+//
+// Edit authority is at the user level rather than the client_app level: any of
+// the owner's enrolled client apps may produce a fresh Integrity over an
+// updated record, so a user with multiple devices is not locked into the one
+// that first uploaded.
 type Vehicle struct {
 	ID          UUID   `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -21,6 +33,77 @@ type Vehicle struct {
 	// BannerImage is an optional wide image clients can use in richer vehicle
 	// views.
 	BannerImage *ImageResourceRef `json:"banner_image,omitempty"`
+	// OwnerUserID is the user whose enrolled client cert produced Integrity.
+	// Permission to edit the record or update the authorized-drivers ACL is
+	// scoped to this user, not to a specific client_app.
+	OwnerUserID UUID `json:"owner_user_id"`
+	// Capacity is the total number of possible occupants the vehicle can
+	// carry, including the driver. A sedan is 5; a seven-seat minivan with
+	// six seatbelts is 6.
+	Capacity int `json:"capacity"`
+	// AuthorizedDrivers names the users the owner has authorized to drive
+	// this vehicle within the current journey. DriverAttestation values
+	// validate against this list at the ACL version they recorded; see
+	// VehicleACL for the version-evolution shape.
+	AuthorizedDrivers []UUID `json:"authorized_drivers"`
+	// ACLVersion is a monotonic counter incremented whenever
+	// AuthorizedDrivers or EmergencyRule changes. Driver attestations
+	// record the version they consulted so a later ACL revision does not
+	// retroactively invalidate prior attestations.
+	ACLVersion int `json:"acl_version"`
+	// EmergencyRule is the owner-published fallback for when no one in
+	// AuthorizedDrivers is available to drive. When set, a driver
+	// attestation produced by a non-ACL participant is recorded with a
+	// downgraded trust flag rather than rejected outright; when unset,
+	// non-ACL attestations are recorded as ACL violations. Loss of trust
+	// is information, never data loss.
+	EmergencyRule *VehicleEmergencyRule `json:"emergency_rule,omitempty"`
+	// Integrity is the owner's signature over CanonicalEncoding(). Optional
+	// on a draft Vehicle that has not yet been signed; required on the
+	// wire (the server rejects unsigned vehicle uploads).
+	Integrity *Integrity `json:"integrity,omitempty"`
+}
+
+// VehicleEmergencyRule names the owner-published fallback semantics for when
+// no AuthorizedDrivers participant is available to drive at a waypoint.
+// The protocol records the rule so a future server-side or peer verifier can
+// apply the same policy across implementations.
+type VehicleEmergencyRule struct {
+	// Kind names which fallback policy applies.
+	Kind VehicleEmergencyRuleKind `json:"kind"`
+}
+
+// VehicleEmergencyRuleKind enumerates the fallback policies an owner may
+// publish for emergency driver attestations.
+type VehicleEmergencyRuleKind string
+
+const (
+	// VehicleEmergencyRuleNone means no emergency fallback is published.
+	// A non-ACL driver attestation is recorded as an ACL violation.
+	VehicleEmergencyRuleNone VehicleEmergencyRuleKind = "none"
+	// VehicleEmergencyRuleAnyJourneyParticipant means any participant in
+	// the journey may drive in an emergency. A non-ACL driver attestation
+	// by a journey participant is recorded with a downgraded trust flag
+	// rather than rejected.
+	VehicleEmergencyRuleAnyJourneyParticipant VehicleEmergencyRuleKind = "any_journey_participant"
+)
+
+// Valid reports whether the rule kind is a known OpenCaravan value.
+func (k VehicleEmergencyRuleKind) Valid() bool {
+	switch k {
+	case VehicleEmergencyRuleNone, VehicleEmergencyRuleAnyJourneyParticipant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Validate reports whether the rule has a known kind.
+func (r VehicleEmergencyRule) Validate() error {
+	if !r.Kind.Valid() {
+		return errors.New("emergency rule kind must be a known OpenCaravan value")
+	}
+	return nil
 }
 
 // SegmentVehicle describes one vehicle's participation in a journey segment.
@@ -70,8 +153,11 @@ type VehicleOccupant struct {
 	LeaveTime            *time.Time   `json:"leave_time,omitempty"`
 }
 
-// Validate reports whether vehicle contains required identity and valid
-// optional image resources.
+// Validate reports whether vehicle contains required identity, ownership,
+// authorization, and signed-envelope shape, plus valid optional image
+// resources. Structural only — signature cryptographic verification is the
+// consumer's responsibility once the canonical bytes are reproduced via
+// CanonicalEncoding.
 func (vehicle Vehicle) Validate() error {
 	if !vehicle.ID.Valid() {
 		return errors.New("vehicle id must be a valid UUID")
@@ -89,7 +175,46 @@ func (vehicle Vehicle) Validate() error {
 			return fmt.Errorf("banner_image: %w", err)
 		}
 	}
+	if !vehicle.OwnerUserID.Valid() {
+		return errors.New("owner_user_id must be a valid UUID")
+	}
+	if vehicle.Capacity < 1 {
+		return errors.New("capacity must be at least 1")
+	}
+	for i, driver := range vehicle.AuthorizedDrivers {
+		if !driver.Valid() {
+			return fmt.Errorf("authorized_drivers[%d] must be a valid UUID", i)
+		}
+	}
+	if vehicle.ACLVersion < 1 {
+		return errors.New("acl_version must be at least 1")
+	}
+	if vehicle.EmergencyRule != nil {
+		if err := vehicle.EmergencyRule.Validate(); err != nil {
+			return fmt.Errorf("emergency_rule: %w", err)
+		}
+	}
+	if vehicle.Integrity != nil {
+		if err := vehicle.Integrity.Validate(); err != nil {
+			return fmt.Errorf("integrity: %w", err)
+		}
+	}
 	return nil
+}
+
+// CanonicalEncoding returns the deterministic byte sequence the owner signs
+// to produce Integrity. The Integrity field itself is excluded from the input
+// (a signature cannot cover itself); every other field is included via
+// [CanonicalJSON].
+//
+// Verifiers reproduce CanonicalEncoding on a received Vehicle, compute the
+// signature input, and check Integrity.Signature against the cert identified
+// by Integrity.KeyID. All conformant OpenCaravan implementations produce
+// byte-identical output for the same input.
+func (vehicle Vehicle) CanonicalEncoding() ([]byte, error) {
+	cp := vehicle
+	cp.Integrity = nil
+	return CanonicalJSON(cp)
 }
 
 // Validate reports whether vehicle has the required segment, vehicle, occupant,
