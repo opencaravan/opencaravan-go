@@ -156,7 +156,7 @@ A signed metadata record for a vehicle participating in a specific journey. Typi
 | Capacity | `capacity` | int | yes | Total possible occupants **including the driver**. A sedan is 5; a seven-seat minivan with six belts is 6. Capacity must be ≥ 1. |
 | AuthorizedDrivers | `authorized_drivers` | []UUID | yes | User IDs authorized by the owner to drive this vehicle in this journey. May be empty (owner is sole driver). |
 | ACLVersion | `acl_version` | int | yes | Monotonic counter starting at 1. Incremented whenever AuthorizedDrivers or EmergencyRule changes. DriverAttestations record the version they consulted. |
-| EmergencyRule | `emergency_rule` | VehicleEmergencyRule | no | Owner-published fallback. Absent = no emergency policy; non-ACL attestations are recorded as ACL violations. Present = non-ACL attestations are recorded with a downgraded trust flag rather than rejected. |
+| EmergencyRule | `emergency_rule` | VehicleEmergencyRule | no | Owner-published fallback. Behavior is driven by `Kind`, not by presence: nil or `Kind = "none"` → no emergency policy, non-ACL attestations recorded as ACL violations; `Kind = "any_journey_participant"` → non-ACL attestations by journey participants recorded with a downgraded trust flag rather than rejected. Treating nil and `"none"` equivalently lets an owner publish an explicit "I considered the fallback question and chose no policy" signal distinct from "I haven't thought about it yet." |
 | Integrity | `integrity` | Integrity | yes (on wire) | Signature by the owner's enrolled client cert over `CanonicalEncoding(Vehicle)`. Optional on a draft Vehicle that has not yet been signed; required for any server upload. |
 
 ### `VehicleEmergencyRule`

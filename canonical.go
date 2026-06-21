@@ -20,9 +20,19 @@ import (
 //
 // Encoding scheme (see docs/vehicles.md for the worked example): the value
 // is first marshaled with encoding/json, parsed back into a generic
-// any tree, then re-encoded with sorted keys and no whitespace.
-// Numbers round-trip through float64; OpenCaravan integer fields stay
-// within the float64 mantissa range by design so no precision is lost.
+// any tree using [json.Decoder.UseNumber] so numbers preserve their
+// original decimal text representation (no float64 conversion), then
+// re-encoded with sorted keys and no whitespace.
+//
+// Numbers are emitted exactly as the language's standard JSON encoder
+// rendered them on the initial marshal. OpenCaravan number fields are
+// all integers (capacity, year, version, etc.); cross-language
+// implementations agree because every language's standard JSON encoder
+// produces the same decimal-integer text for the same integer value
+// ("150" not "1.5e+02"). The protocol does not define any non-integer
+// numeric fields in v0.1.x — floating-point formatting compatibility
+// is reserved for a future version that introduces such fields and
+// pins their encoding.
 func CanonicalJSON(v any) ([]byte, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {

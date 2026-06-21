@@ -14,9 +14,10 @@ import (
 	opencaravan "github.com/opencaravan/opencaravan-go"
 )
 
-// validVehicleID/validUserID return UUIDs known to pass UUID.Valid for use as
-// test fixtures. Generated once per test and reused so each subtest gets
-// fresh values without re-implementing UUID synthesis.
+// mustUUID returns a fresh UUID that passes UUID.Valid, failing the test on
+// any underlying generator error. Used so every fixture can have unique
+// identity-bearing fields without forcing the call sites to handle the
+// (vanishingly unlikely) UUID generation failure path.
 func mustUUID(t *testing.T) opencaravan.UUID {
 	t.Helper()
 	id, err := opencaravan.NewUUID()
@@ -248,7 +249,23 @@ func TestDriverAttestationValidate(t *testing.T) {
 			a.PriorAttestationHash = &s
 		},
 		"prior hash missing sha256 prefix": func(a *opencaravan.DriverAttestation) {
-			s := "md5:abcdef"
+			s := "md5:" + strings.Repeat("a", 64)
+			a.PriorAttestationHash = &s
+		},
+		"prior hash hex too short": func(a *opencaravan.DriverAttestation) {
+			s := "sha256:abc"
+			a.PriorAttestationHash = &s
+		},
+		"prior hash hex too long": func(a *opencaravan.DriverAttestation) {
+			s := "sha256:" + strings.Repeat("a", 65)
+			a.PriorAttestationHash = &s
+		},
+		"prior hash uppercase hex": func(a *opencaravan.DriverAttestation) {
+			s := "sha256:" + strings.Repeat("A", 64)
+			a.PriorAttestationHash = &s
+		},
+		"prior hash non-hex char": func(a *opencaravan.DriverAttestation) {
+			s := "sha256:" + strings.Repeat("g", 64)
 			a.PriorAttestationHash = &s
 		},
 	}

@@ -3,6 +3,7 @@ package opencaravan
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -60,11 +61,8 @@ func (a DriverAttestation) Validate() error {
 		return errors.New("acl_version_consulted must be at least 1")
 	}
 	if a.PriorAttestationHash != nil {
-		if *a.PriorAttestationHash == "" {
-			return errors.New("prior_attestation_hash must be non-empty when set")
-		}
-		if len(*a.PriorAttestationHash) < len("sha256:") || (*a.PriorAttestationHash)[:7] != "sha256:" {
-			return errors.New("prior_attestation_hash must use the sha256: prefix")
+		if err := validatePriorAttestationHash(*a.PriorAttestationHash); err != nil {
+			return fmt.Errorf("prior_attestation_hash: %w", err)
 		}
 	}
 	if a.Integrity != nil {
@@ -85,4 +83,26 @@ func (a DriverAttestation) CanonicalEncoding() ([]byte, error) {
 	cp := a
 	cp.Integrity = nil
 	return CanonicalJSON(cp)
+}
+
+// validatePriorAttestationHash enforces the exact wire shape
+// `sha256:<64 lowercase hex>`. Length-and-character matching is strict
+// because the field is consumed for fork detection across implementations;
+// a permissive parser here would mean Go, Swift, and Kotlin clients could
+// disagree on whether two attestations share a predecessor.
+func validatePriorAttestationHash(s string) error {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(s, prefix) {
+		return errors.New(`must use the "sha256:" prefix`)
+	}
+	hex := s[len(prefix):]
+	if len(hex) != 64 {
+		return fmt.Errorf("hex body must be exactly 64 characters (got %d)", len(hex))
+	}
+	for i, c := range hex {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return fmt.Errorf("hex body must be lowercase 0-9a-f (bad char %q at position %d)", c, i)
+		}
+	}
+	return nil
 }

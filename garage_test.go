@@ -224,13 +224,19 @@ func TestGarageVehicleValidate(t *testing.T) {
 
 func TestGarageVehicleCanonicalEncodingExcludesIntegrity(t *testing.T) {
 	gv := validGarageVehicle(t)
-	before, _ := gv.CanonicalEncoding()
+	before, err := gv.CanonicalEncoding()
+	if err != nil {
+		t.Fatalf("encode before: %v", err)
+	}
 	gv.Integrity = &opencaravan.Integrity{
 		Algorithm: "p256-ecdsa-sha256",
 		KeyID:     "sha256:" + strings.Repeat("b", 64),
 		Signature: base64.RawURLEncoding.EncodeToString([]byte("sig")),
 	}
-	after, _ := gv.CanonicalEncoding()
+	after, err := gv.CanonicalEncoding()
+	if err != nil {
+		t.Fatalf("encode after: %v", err)
+	}
 	if string(before) != string(after) {
 		t.Fatal("CanonicalEncoding must exclude Integrity")
 	}

@@ -62,12 +62,22 @@ type Vehicle struct {
 	// record the version they consulted so a later ACL revision does not
 	// retroactively invalidate prior attestations.
 	ACLVersion int `json:"acl_version"`
-	// EmergencyRule is the owner-published fallback for when no one in
-	// AuthorizedDrivers is available to drive. When set, a driver
-	// attestation produced by a non-ACL participant is recorded with a
-	// downgraded trust flag rather than rejected outright; when unset,
-	// non-ACL attestations are recorded as ACL violations. Loss of trust
-	// is information, never data loss.
+	// EmergencyRule is the owner-published fallback policy for when no
+	// one in AuthorizedDrivers is available to drive. The behavior is
+	// driven by Kind, not by presence:
+	//
+	//   - nil OR Kind == VehicleEmergencyRuleNone: no fallback. A
+	//     non-ACL driver attestation is recorded as an ACL violation.
+	//   - Kind == VehicleEmergencyRuleAnyJourneyParticipant: any
+	//     journey participant may drive in an emergency. A non-ACL
+	//     attestation by a journey participant is recorded with a
+	//     downgraded trust flag rather than rejected.
+	//
+	// Treating nil and "none" equivalently lets an owner publish an
+	// explicit "I considered the fallback question and chose no
+	// policy" signal distinct from "I haven't thought about it yet,"
+	// but the protocol's evaluation collapses both to the same
+	// outcome. Loss of trust is information, never data loss.
 	EmergencyRule *VehicleEmergencyRule `json:"emergency_rule,omitempty"`
 	// Integrity is the owner's signature over CanonicalEncoding(). Optional
 	// on a draft Vehicle that has not yet been signed; required on the
