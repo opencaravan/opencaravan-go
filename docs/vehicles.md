@@ -1,8 +1,17 @@
-# Vehicles, Authorized Drivers, and Per-Segment Driver Attestation
+# Garages, Vehicles, Authorized Drivers, and Per-Segment Driver Attestation
 
-This document is the canonical OpenCaravan specification for how journey-participant Vehicles are modeled, owned, signed, and operated across journey segments. It is implementation-language-agnostic. A competent engineer should be able to build a conformant client in Go, Swift, Kotlin, Rust, or TypeScript from this document alone, without reading any server's source code.
+This document is the canonical OpenCaravan specification for how vehicles are modeled, owned, signed, and operated — both in a user's persistent account-scoped library (the *garage* layer) and during a specific journey (the *journey* layer). It is implementation-language-agnostic. A competent engineer should be able to build a conformant client in Go, Swift, Kotlin, Rust, or TypeScript from this document alone, without reading any server's source code.
 
-The Go reference types live in [`vehicle.go`](../vehicle.go), [`vehicle_acl.go`](../vehicle_acl.go), and [`driver_attestation.go`](../driver_attestation.go); the canonical-encoding helper lives in [`canonical.go`](../canonical.go). See [`protocol-model.md`](./protocol-model.md) for the broader protocol vocabulary (`UUID`, `ImageResourceRef`, `Integrity`, `User`, `Journey`).
+The Go reference types live in [`garage.go`](../garage.go), [`garage_vehicle.go`](../garage_vehicle.go), [`vehicle.go`](../vehicle.go), [`vehicle_acl.go`](../vehicle_acl.go), and [`driver_attestation.go`](../driver_attestation.go); the canonical-encoding helper lives in [`canonical.go`](../canonical.go). See [`protocol-model.md`](./protocol-model.md) for the broader protocol vocabulary (`UUID`, `ImageResourceRef`, `Integrity`, `User`, `Journey`).
+
+## Two Layers
+
+The protocol models vehicles in two distinct layers:
+
+- **The garage layer** is account-scoped and persistent. A user enters their cars once, the entries live across many journeys, and a household can share authority over the whole library by listing multiple owners on a single `Garage`. This is where vehicle *identity* lives — what a car is, what it looks like, what notes the owners keep about it.
+- **The journey layer** is journey-scoped and ephemeral. When a participant joins a journey they upload a fresh `Vehicle` for the trip. This is where *usage* lives — who can drive it during this trip, which segment it is currently in, which driver is currently behind the wheel. A journey `Vehicle` typically has its display name, photos, make/model, and capacity populated from a garage entry the participant has selected — but that linkage is a client-side concern, not exposed in the journey wire format. Other journey participants observe only the journey `Vehicle`; they cannot correlate it with any garage entry.
+
+Keeping the layers separate preserves the privacy boundary between journeys (non-owner journey participants cannot see the same garage car appearing in multiple journeys) while enabling a household to maintain a shared "household garage" of vehicles. Wire-level linkage from journey Vehicle to garage entry is reserved for a later protocol version that explicitly opts in to cross-journey aggregation for owners.
 
 ## Design Intent
 
@@ -16,11 +25,122 @@ Three properties shape every other decision:
 
 **Secure protocol, ordinary UI.** The cryptographic machinery is rigorous because the protocol is the layer that resists adversarial behavior. Client UIs are encouraged to be friendly: a filtered list of "vehicles you can drive at this waypoint," surfaced from cached state. End users do not need to think about certificates, ACLs, or signatures — those facts are protocol-level, not UX-level.
 
-## Wire Types
+## Garage Layer
+
+### `Garage`
+
+The account-scoped container that holds a household's library of `GarageVehicle` entries. A user with a single account may have a single garage; users in a household share a single garage by having multiple `Owners`. A user may participate in multiple garages — one household garage shared with a spouse, one project-car garage shared with weekend track buddies, and so on.
+
+Each `Garage` value is one revision in a monotonic chain. Revisions are signed by any current accepted `Owner`, so any owner may add or remove other owners, rename the garage, or otherwise edit the container. The server retains the full revision history; the current state is the latest revision whose invited owners have all accepted.
+
+| Field | JSON | Type | Required | Notes |
+| --- | --- | --- | --- | --- |
+| ID | `id` | UUID | yes | Client-generated, stable across revisions. |
+| Name | `name` | string | yes | User-readable name. "Wheelsdown Household". |
+| RevisionVersion | `revision_version` | int | yes | Monotonic; starts at 1, strictly increasing per ID. |
+| RevisionTime | `revision_time` | RFC3339Nano UTC | yes | When this revision was signed. |
+| Owners | `owners` | []GarageOwner | yes | At least one. Each entry names a user, when they were added, and when (if) they accepted the invitation. |
+| SignedBy | `signed_by` | UUID | yes | Must reference an `Owner` whose `AcceptedTime` is set (a pending owner cannot sign updates). |
+| Integrity | `integrity` | Integrity | yes (on wire) | Signature by the SignedBy owner over `CanonicalEncoding(Garage)`. |
+
+### `GarageOwner`
+
+| Field | JSON | Type | Required | Notes |
+| --- | --- | --- | --- | --- |
+| UserID | `user_id` | UUID | yes | The user this stake belongs to. |
+| AddedTime | `added_time` | RFC3339Nano UTC | yes | Revision time when this owner was added. |
+| AcceptedTime | `accepted_time` | RFC3339Nano UTC | no | Nil = pending acceptance (invitee has not yet published a matching `GarageOwnershipAcceptance`); set = active owner. When set, must not precede `AddedTime`. |
+
+### `GarageOwnershipAcceptance`
+
+The signed acknowledgement a newly-invited user publishes to accept a pending garage co-ownership invitation. The acceptance binds to a specific `Garage` revision (the revision in which the recipient was first added with `AcceptedTime` nil); replaying it against a different revision is rejected on a version mismatch.
+
+| Field | JSON | Type | Required | Notes |
+| --- | --- | --- | --- | --- |
+| GarageID | `garage_id` | UUID | yes | Which garage. |
+| RevisionVersionAccepted | `revision_version_accepted` | int | yes | Which revision invited me. |
+| AccepterUserID | `accepter_user_id` | UUID | yes | The user accepting. Must match the cert that produced Integrity. |
+| AcceptedTime | `accepted_time` | RFC3339Nano UTC | yes | When the recipient accepted. |
+| Integrity | `integrity` | Integrity | yes (on wire) | Signature by the accepter's enrolled client cert. |
+
+### `GarageVehicle`
+
+One vehicle entry in a garage. Carries the persistent identity — display name, make/model/year/color, capacity, photos, owner notes. Distinct from the journey-scoped `Vehicle` below; see *Two Layers* for the relationship.
+
+| Field | JSON | Type | Required | Notes |
+| --- | --- | --- | --- | --- |
+| ID | `id` | UUID | yes | Client-generated, stable across revisions. |
+| GarageID | `garage_id` | UUID | yes | The owning garage. |
+| RevisionVersion | `revision_version` | int | yes | Monotonic per ID. |
+| RevisionTime | `revision_time` | RFC3339Nano UTC | yes | When this revision was signed. |
+| DisplayName | `display_name` | string | yes | "Riley's Subaru", "The Blue Beast". |
+| Make | `make` | string | no | Manufacturer. |
+| Model | `model` | string | no | Model name. |
+| ModelYear | `model_year` | int | no | Four-digit year. |
+| Color | `color` | string | no | Free-form. |
+| Capacity | `capacity` | int | yes | Total possible occupants including the driver. ≥ 1. |
+| AvatarImage | `avatar_image` | ImageResourceRef | no | Square tile representation. |
+| BannerImage | `banner_image` | ImageResourceRef | no | Wide header. |
+| Notes | `notes` | string | no | Owner-visible free-form notes ("transmission rebuilt 2024"). |
+| SignedBy | `signed_by` | UUID | yes | The garage owner who produced Integrity. Verifiers cross-check against the garage's owner list at `RevisionTime` to confirm the signer was an accepted owner then. |
+| Integrity | `integrity` | Integrity | yes (on wire) | Signature by the SignedBy owner. |
+
+### Garage authority model
+
+The garage layer's authority rules:
+
+1. **Any current accepted owner can sign updates.** Garage revisions, GarageVehicle revisions, ownership additions, ownership removals — all signed by any owner. The protocol does not distinguish "primary owner" or "admin"; all owners have equal authority.
+2. **Adding a co-owner requires recipient consent.** An existing owner publishes a garage revision that adds the new user to `Owners` with `AcceptedTime` nil. The new user sees a pending invitation in their app; they accept by publishing a `GarageOwnershipAcceptance` for that revision. Server activates the revision (or surfaces it as active) once the acceptance is received. Without acceptance, the new user is not an owner — they cannot sign updates, they cannot see private garage contents.
+3. **Removing a co-owner is unilateral.** Any current owner may sign a garage revision that excludes another owner. This intentionally permits a household to evict a lost or compromised account without the cooperation of that account. (Without unilateral removal, a lost-account problem becomes a permanent garage-ownership problem.)
+4. **The sole remaining owner cannot voluntarily depart.** A revision that would leave `Owners` empty is rejected as a structurally invalid orphan. To dispose of a sole-owner garage, the owner deletes it (which is a separate, deferred operation).
+5. **`SignedBy` must reference an accepted owner.** A pending invitee cannot sign garage updates — they would be signing on behalf of a household that has not yet ratified their participation.
+
+### Lifecycle flows (garage layer)
+
+#### G1. Garage creation
+
+1. Client constructs a `Garage` with `RevisionVersion = 1`, the user as a single accepted owner (`AcceptedTime = AddedTime = now`), and signs.
+2. Client uploads. Server verifies, persists, and returns the canonical garage.
+
+#### G2. Adding a co-owner
+
+1. Existing owner constructs `Garage` revision N+1 with the new user added to `Owners` (`AcceptedTime = nil`). Signs and uploads.
+2. Server persists the revision as pending; new owner's app learns of the invitation.
+3. New owner reviews and accepts: constructs a `GarageOwnershipAcceptance` referencing `(GarageID, RevisionVersionAccepted = N+1, AccepterUserID = self, AcceptedTime = now)`, signs, uploads.
+4. Server verifies the acceptance, marks the revision active, sets the new owner's `AcceptedTime` to the acceptance time.
+
+#### G3. Removing a co-owner
+
+1. Any current accepted owner constructs a new `Garage` revision N+1 with the removed user absent from `Owners`. Signs and uploads.
+2. Server verifies (signer is a current accepted owner; resulting `Owners` is non-empty; `RevisionVersion` strictly greater than the prior), persists.
+3. Removed owner's view of the garage is revoked immediately. Future signatures by the removed user fail the accepted-owner check.
+
+#### G4. Adding a vehicle to a garage
+
+1. Any current accepted owner constructs a `GarageVehicle` with `RevisionVersion = 1`, populates metadata, signs with their cert, uploads.
+2. Server verifies (signer is an accepted owner of the named garage), persists.
+
+#### G5. Editing a vehicle
+
+1. Any current accepted owner constructs the next monotonic `RevisionVersion` of the `GarageVehicle` with updated metadata, signs, uploads.
+2. Server verifies and persists.
+
+#### G6. Importing a garage vehicle into a journey
+
+The "import" semantic the user-facing app surfaces:
+
+1. App reads the user's accepted-owner garages and the `GarageVehicle` entries within them.
+2. User picks one. App constructs a fresh journey `Vehicle` for the trip, copying `DisplayName`, `Make`, `Model`, `ModelYear`, `Color`, `Capacity`, `AvatarImage`, `BannerImage` from the garage entry.
+3. User configures the journey-specific authorization (who may drive this vehicle in this trip, in `AuthorizedDrivers`), and signs as journey participant.
+4. App uploads the journey `Vehicle` per the journey-layer flow in [Lifecycle Flows (journey layer)](#lifecycle-flows-journey-layer) below.
+
+The journey `Vehicle` does not carry a wire-level reference back to the `GarageVehicle`. Other journey participants see only the journey vehicle.
+
+## Journey Layer
 
 ### `Vehicle`
 
-A signed metadata record for a vehicle participating in a specific journey.
+A signed metadata record for a vehicle participating in a specific journey. Typically populated from a `GarageVehicle` at upload time (see [G6](#g6-importing-a-garage-vehicle-into-a-journey)), but a participant may also enter a Vehicle fresh without any garage backing — the journey layer does not depend on the garage layer.
 
 | Field | JSON | Type | Required | Notes |
 | --- | --- | --- | --- | --- |
@@ -121,7 +241,7 @@ The owner signs SHA-256 of those exact bytes with their client cert's private ke
 
 A conformant test that exercises this round-trip in another language: produce the example bytes above, sign with a fresh P-256 keypair, verify, then mutate one byte and confirm verification fails. The Go reference test is `TestVehicleSignVerifyRoundTrip` in [`vehicle_auth_test.go`](../vehicle_auth_test.go).
 
-## Lifecycle Flows
+## Lifecycle Flows (journey layer)
 
 ### 1. Vehicle upload
 
@@ -251,7 +371,10 @@ The following are deliberately out of scope for v0.1.x; the wire format reserves
 
 - **Co-signed handoff mode.** A stricter opt-in mode where the new driver's attestation only validates if the prior driver counter-signs. Eliminates forks but breaks if the prior driver is unable/unwilling. Future Vehicle field `handoff_policy` will name the modes.
 - **P2P gossip transport.** The protocol shape supports it (self-contained signed payloads, no server mutation on accept); the BLE / Multipeer / Wi-Fi Direct transport itself is a downstream concern.
-- **Cross-journey vehicle persistence.** Vehicles are journey-scoped at the server side in v0.1.x. A future version may add a server-side persistent Vehicle that journeys reference, with explicit owner consent for cross-journey linkability.
+- **Wire-level garage→journey linkage.** v0.1.x keeps the layers independent at the wire level: a journey `Vehicle` is its own thing, populated client-side from a `GarageVehicle` at upload time. A future version may add an opt-in `garage_vehicle_id` field on `Vehicle` for owners who want cross-journey aggregation in their own dashboards. Non-owner participants would not observe the linkage.
+- **Garage update sync to past journeys.** Editing a `GarageVehicle` (new photo, capacity correction) does not retroactively change journey `Vehicle`s that were uploaded under the prior garage revision. A future version may surface "this car was used in N journeys with these date ranges" in an owner's dashboard view, computed server-side from the linkage field above.
+- **Garage deletion.** v0.1.x has no formal delete payload for a `Garage` or `GarageVehicle`. Server implementations may permit administrative deletion by sole-owner accounts; a protocol-level signed deletion payload is reserved for a future version.
+- **Multi-server garage federation.** A garage exists on a single server. Cross-server sharing (federating a household garage across servers an owner is enrolled with) is a federation concern, deferred.
 - **Attestation revocation.** A driver who wants to formally withdraw an earlier attestation (e.g., "I claimed to drive but then I didn't") can today rely on a subsequent attestation overriding the prior. A formal revocation payload may be added when the use case sharpens.
 - **Multi-occupant signed attestations.** A v2 may permit multiple occupants to co-sign per-segment attestations recording the full vehicle roster, not just the driver. The current SegmentVehicle + VehicleOccupant types already accommodate the data shape; the cryptographic envelope is the missing piece.
 

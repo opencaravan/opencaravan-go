@@ -6,20 +6,31 @@ import (
 	"time"
 )
 
-// Vehicle describes a physical vehicle that can carry one or more participants
-// during a journey segment, together with the cert-backed metadata that gates
-// who may drive it and who may edit the record.
+// Vehicle is the journey-scoped representation of a physical vehicle: who is
+// participating in this trip, what its photos and capacity are for the
+// purposes of this trip, and who may drive it during this trip. Persistent,
+// account-scoped identity for a vehicle (the household's library of cars)
+// lives on the separate [GarageVehicle] type; a client typically constructs
+// a journey Vehicle by copying display name, photos, make/model, and
+// capacity from a GarageVehicle the user has selected from their garage,
+// then signing the resulting Vehicle fresh for this journey.
 //
-// The record is owner-signed: OwnerUserID names the user whose enrolled client
-// cert produced Integrity, and the signature covers the canonical encoding of
-// every field except Integrity itself. Verifiers reproduce the canonical bytes
-// via CanonicalEncoding and check the signature against the owner's enrolled
-// cert.
+// The journey Vehicle is owner-signed: OwnerUserID names the journey
+// participant whose enrolled client cert produced Integrity, and the
+// signature covers the canonical encoding of every field except Integrity
+// itself. Verifiers reproduce the canonical bytes via CanonicalEncoding and
+// check the signature against the owner's enrolled cert.
 //
-// Edit authority is at the user level rather than the client_app level: any of
-// the owner's enrolled client apps may produce a fresh Integrity over an
-// updated record, so a user with multiple devices is not locked into the one
-// that first uploaded.
+// Edit authority is at the user level rather than the client_app level: any
+// of the owner's enrolled client apps may produce a fresh Integrity over an
+// updated record, so a user with multiple devices is not locked into the
+// one that first uploaded.
+//
+// AuthorizedDrivers on a journey Vehicle is per-journey and independent of
+// any garage-level co-ownership. The same household car may have different
+// driver permissions in different trips. Garage co-owners share authority
+// over editing the garage entry; per-journey driver permissions stay
+// per-journey.
 type Vehicle struct {
 	ID          UUID   `json:"id"`
 	DisplayName string `json:"display_name"`
