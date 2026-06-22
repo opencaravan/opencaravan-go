@@ -37,9 +37,17 @@ type BlobRef struct {
 }
 
 // Validate reports whether the ref has a structurally valid hash,
-// non-negative size, and non-empty content type. Does not fetch
+// non-negative size, and a canonical content type. Does not fetch
 // the blob or verify the bytes match the hash — that's the
 // consumer's responsibility after download.
+//
+// Because BlobRef sits inside the canonical bytes of [Vehicle] /
+// [GarageVehicle] that get cryptographically signed, ContentType
+// is enforced as strictly canonical: non-empty, lower-case, no
+// leading or trailing whitespace. Two implementations that differ
+// on whether they preserve "Image/JPEG" or normalize to
+// "image/jpeg" would otherwise produce different signatures for
+// the same blob, breaking peer verification silently.
 func (b BlobRef) Validate() error {
 	if err := ValidateCanonicalHash(b.Hash); err != nil {
 		return fmt.Errorf("hash: %w", err)
@@ -49,6 +57,12 @@ func (b BlobRef) Validate() error {
 	}
 	if b.ContentType == "" {
 		return errors.New("content_type must be set")
+	}
+	if b.ContentType != strings.ToLower(b.ContentType) {
+		return errors.New("content_type must be lower-case")
+	}
+	if b.ContentType != strings.TrimSpace(b.ContentType) {
+		return errors.New("content_type must not have leading or trailing whitespace")
 	}
 	return nil
 }

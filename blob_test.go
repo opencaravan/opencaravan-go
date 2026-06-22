@@ -17,13 +17,16 @@ func TestBlobRefValidate(t *testing.T) {
 		t.Fatalf("happy path: %v", err)
 	}
 	cases := map[string]func(*opencaravan.BlobRef){
-		"missing hash":         func(b *opencaravan.BlobRef) { b.Hash = "" },
-		"hash missing prefix":  func(b *opencaravan.BlobRef) { b.Hash = strings.Repeat("a", 64) },
-		"hash wrong length":    func(b *opencaravan.BlobRef) { b.Hash = "sha256:" + strings.Repeat("a", 32) },
-		"hash upper-case hex":  func(b *opencaravan.BlobRef) { b.Hash = "sha256:" + strings.Repeat("A", 64) },
-		"hash non-hex":         func(b *opencaravan.BlobRef) { b.Hash = "sha256:" + strings.Repeat("z", 64) },
-		"negative size":        func(b *opencaravan.BlobRef) { b.Size = -1 },
-		"missing content type": func(b *opencaravan.BlobRef) { b.ContentType = "" },
+		"missing hash":                    func(b *opencaravan.BlobRef) { b.Hash = "" },
+		"hash missing prefix":             func(b *opencaravan.BlobRef) { b.Hash = strings.Repeat("a", 64) },
+		"hash wrong length":               func(b *opencaravan.BlobRef) { b.Hash = "sha256:" + strings.Repeat("a", 32) },
+		"hash upper-case hex":             func(b *opencaravan.BlobRef) { b.Hash = "sha256:" + strings.Repeat("A", 64) },
+		"hash non-hex":                    func(b *opencaravan.BlobRef) { b.Hash = "sha256:" + strings.Repeat("z", 64) },
+		"negative size":                   func(b *opencaravan.BlobRef) { b.Size = -1 },
+		"missing content type":            func(b *opencaravan.BlobRef) { b.ContentType = "" },
+		"content type with upper case":    func(b *opencaravan.BlobRef) { b.ContentType = "Image/JPEG" },
+		"content type with leading space": func(b *opencaravan.BlobRef) { b.ContentType = " image/jpeg" },
+		"content type with trailing tab":  func(b *opencaravan.BlobRef) { b.ContentType = "image/jpeg\t" },
 	}
 	for name, mut := range cases {
 		t.Run(name, func(t *testing.T) {

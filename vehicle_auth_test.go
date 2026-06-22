@@ -400,13 +400,37 @@ func TestVehicleJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.ID != v.ID || got.OwnerUserID != v.OwnerUserID ||
-		got.RevisionVersion != v.RevisionVersion ||
-		got.Capacity != v.Capacity ||
-		got.Notes != v.Notes ||
-		got.AvatarBlob == nil || got.AvatarBlob.Hash != v.AvatarBlob.Hash ||
-		got.BannerBlob == nil || got.BannerBlob.Size != v.BannerBlob.Size ||
-		got.Integrity == nil || got.Integrity.Algorithm != v.Integrity.Algorithm {
-		t.Fatalf("round-trip lossy:\n  want: %+v\n  got:  %+v", v, got)
+	// Verify every field round-trips losslessly. A subset check would let
+	// silent regressions slip through (e.g., a new tag breaking
+	// model_year serialization unnoticed).
+	checks := []struct {
+		name      string
+		wantEqual bool
+	}{
+		{"ID", got.ID == v.ID},
+		{"OwnerUserID", got.OwnerUserID == v.OwnerUserID},
+		{"RevisionVersion", got.RevisionVersion == v.RevisionVersion},
+		{"RevisionTime", got.RevisionTime.Equal(v.RevisionTime)},
+		{"DisplayName", got.DisplayName == v.DisplayName},
+		{"Make", got.Make == v.Make},
+		{"Model", got.Model == v.Model},
+		{"ModelYear", got.ModelYear == v.ModelYear},
+		{"Color", got.Color == v.Color},
+		{"Capacity", got.Capacity == v.Capacity},
+		{"Notes", got.Notes == v.Notes},
+		{"AvatarBlob.Hash", got.AvatarBlob != nil && got.AvatarBlob.Hash == v.AvatarBlob.Hash},
+		{"AvatarBlob.Size", got.AvatarBlob != nil && got.AvatarBlob.Size == v.AvatarBlob.Size},
+		{"AvatarBlob.ContentType", got.AvatarBlob != nil && got.AvatarBlob.ContentType == v.AvatarBlob.ContentType},
+		{"BannerBlob.Hash", got.BannerBlob != nil && got.BannerBlob.Hash == v.BannerBlob.Hash},
+		{"BannerBlob.Size", got.BannerBlob != nil && got.BannerBlob.Size == v.BannerBlob.Size},
+		{"BannerBlob.ContentType", got.BannerBlob != nil && got.BannerBlob.ContentType == v.BannerBlob.ContentType},
+		{"Integrity.Algorithm", got.Integrity != nil && got.Integrity.Algorithm == v.Integrity.Algorithm},
+		{"Integrity.KeyID", got.Integrity != nil && got.Integrity.KeyID == v.Integrity.KeyID},
+		{"Integrity.Signature", got.Integrity != nil && got.Integrity.Signature == v.Integrity.Signature},
+	}
+	for _, c := range checks {
+		if !c.wantEqual {
+			t.Errorf("field %s did not round-trip losslessly\n  want: %+v\n  got:  %+v", c.name, v, got)
+		}
 	}
 }
