@@ -3,7 +3,13 @@ package opencaravan
 import "errors"
 
 // ProtocolVersion is the current draft OpenCaravan protocol version.
-const ProtocolVersion = "0.1-draft"
+//
+// 0.2-draft introduced the content-addressed [BlobRef] type, refactored
+// [Vehicle] into a metadata-only signed bundle (moving authorization
+// fields to [VehicleACL] exclusively), and replaced the URL-based image
+// references on [Vehicle] / [GarageVehicle] with hash-based [BlobRef]
+// references.
+const ProtocolVersion = "0.2-draft"
 
 // RegistrationMode describes whether a server is currently accepting
 // invite-backed user registration.

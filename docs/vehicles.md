@@ -79,8 +79,8 @@ One vehicle entry in a garage. Carries the persistent identity — display name,
 | ModelYear | `model_year` | int | no | Four-digit year. |
 | Color | `color` | string | no | Free-form. |
 | Capacity | `capacity` | int | yes | Total possible occupants including the driver. ≥ 1. |
-| AvatarImage | `avatar_image` | ImageResourceRef | no | Square tile representation. |
-| BannerImage | `banner_image` | ImageResourceRef | no | Wide header. |
+| AvatarBlob | `avatar_blob` | BlobRef | no | Content-addressed reference to the square tile photo. See [BlobRef](#blobref). |
+| BannerBlob | `banner_blob` | BlobRef | no | Content-addressed reference to the wide header photo. See [BlobRef](#blobref). |
 | Notes | `notes` | string | no | Owner-visible free-form notes ("transmission rebuilt 2024"). |
 | SignedBy | `signed_by` | UUID | yes | The garage owner who produced Integrity. Verifiers cross-check against the garage's owner list at `RevisionTime` to confirm the signer was an accepted owner then. |
 | Integrity | `integrity` | Integrity | yes (on wire) | Signature by the SignedBy owner. |
@@ -130,8 +130,8 @@ The garage layer's authority rules:
 The "import" semantic the user-facing app surfaces:
 
 1. App reads the user's accepted-owner garages and the `GarageVehicle` entries within them.
-2. User picks one. App constructs a fresh journey `Vehicle` for the trip, copying `DisplayName`, `Make`, `Model`, `ModelYear`, `Color`, `Capacity`, `AvatarImage`, `BannerImage` from the garage entry.
-3. User configures the journey-specific authorization (who may drive this vehicle in this trip, in `AuthorizedDrivers`), and signs as journey participant.
+2. User picks one. App constructs a fresh journey `Vehicle` for the trip, copying `DisplayName`, `Make`, `Model`, `ModelYear`, `Color`, `Capacity`, `AvatarBlob`, `BannerBlob`, `Notes` from the garage entry.
+3. User configures the journey-specific authorization in a separate `VehicleACL` payload (`AuthorizedDrivers`, optional `EmergencyRule`) and signs both the `Vehicle` and the initial `VehicleACL` as the journey participant.
 4. App uploads the journey `Vehicle` per the journey-layer flow in [Lifecycle Flows (journey layer)](#lifecycle-flows-journey-layer) below.
 
 The journey `Vehicle` does not carry a wire-level reference back to the `GarageVehicle`. Other journey participants see only the journey vehicle.
@@ -140,24 +140,40 @@ The journey `Vehicle` does not carry a wire-level reference back to the `GarageV
 
 ### `Vehicle`
 
-A signed metadata record for a vehicle participating in a specific journey. Typically populated from a `GarageVehicle` at upload time (see [G6](#g6-importing-a-garage-vehicle-into-a-journey)), but a participant may also enter a Vehicle fresh without any garage backing — the journey layer does not depend on the garage layer.
+A signed **metadata-only** record for a vehicle participating in a specific journey. Carries owner-edited descriptive state (display name, make/model, photos, notes, capacity) but **not** authorization — who may drive in this journey lives on the separate [`VehicleACL`](#vehicleacl) signed type. The split lets clients gossip a metadata change (a new photo, a corrected model year) independently of an authorization change (adding a driver).
+
+A journey `Vehicle` is typically populated from a `GarageVehicle` at upload time (see [G6](#g6-importing-a-garage-vehicle-into-a-journey)), but a participant may also enter one fresh without any garage backing — the journey layer does not depend on the garage layer.
 
 | Field | JSON | Type | Required | Notes |
 | --- | --- | --- | --- | --- |
-| ID | `id` | UUID | yes | Client-generated, server-maintained. Stable for the life of the journey. |
+| ID | `id` | UUID | yes | Client-generated, server-maintained. Stable across revisions for the life of the journey. |
+| OwnerUserID | `owner_user_id` | UUID | yes | The user whose enrolled client cert produced Integrity. Edit authority is scoped to this user — any client_app enrolled to this user may produce a fresh signed update. |
+| RevisionVersion | `revision_version` | int | yes | Monotonic counter starting at 1, strictly increasing per ID. Independent of `VehicleACL.ACLVersion` — metadata and authorization version separately. |
+| RevisionTime | `revision_time` | RFC3339Nano UTC | yes | When this revision was signed. Used by recipients to render "last updated" and to break ties when two revisions arrive concurrently. |
 | DisplayName | `display_name` | string | yes | Operator-readable name. "The Blue Beast", "Riley's Subaru". |
 | Make | `make` | string | no | Manufacturer. |
 | Model | `model` | string | no | Model name. |
 | ModelYear | `model_year` | int | no | Four-digit year. |
 | Color | `color` | string | no | Free-form. |
-| AvatarImage | `avatar_image` | ImageResourceRef | no | Square image rendered as the vehicle's tile representation. Clients should crop to circle. |
-| BannerImage | `banner_image` | ImageResourceRef | no | Wide image used as a header on the vehicle's detail view. |
-| OwnerUserID | `owner_user_id` | UUID | yes | The user whose enrolled client cert produced Integrity. Edit authority is scoped to this user — any client_app enrolled to this user may produce a fresh signed update. |
 | Capacity | `capacity` | int | yes | Total possible occupants **including the driver**. A sedan is 5; a seven-seat minivan with six belts is 6. Capacity must be ≥ 1. |
-| AuthorizedDrivers | `authorized_drivers` | []UUID | yes | User IDs authorized by the owner to drive this vehicle in this journey. May be empty (owner is sole driver). |
-| ACLVersion | `acl_version` | int | yes | Monotonic counter starting at 1. Incremented whenever AuthorizedDrivers or EmergencyRule changes. DriverAttestations record the version they consulted. |
-| EmergencyRule | `emergency_rule` | VehicleEmergencyRule | no | Owner-published fallback. Behavior is driven by `Kind`, not by presence: nil or `Kind = "none"` → no emergency policy, non-ACL attestations recorded as ACL violations; `Kind = "any_journey_participant"` → non-ACL attestations by journey participants recorded with a downgraded trust flag rather than rejected. Treating nil and `"none"` equivalently lets an owner publish an explicit "I considered the fallback question and chose no policy" signal distinct from "I haven't thought about it yet." |
+| AvatarBlob | `avatar_blob` | BlobRef | no | Content-addressed reference to the square tile photo. See [BlobRef](#blobref). |
+| BannerBlob | `banner_blob` | BlobRef | no | Content-addressed reference to the wide header photo. See [BlobRef](#blobref). |
+| Notes | `notes` | string | no | Owner-authored free text. |
 | Integrity | `integrity` | Integrity | yes (on wire) | Signature by the owner's enrolled client cert over `CanonicalEncoding(Vehicle)`. Optional on a draft Vehicle that has not yet been signed; required for any server upload. |
+
+### `BlobRef`
+
+A content-addressed reference to an immutable blob of bytes hosted (and replicated) by an OpenCaravan server. The hash is both the identifier and the integrity check — clients that download the bytes recompute sha256 and reject mismatches without needing a separate digest field.
+
+`BlobRef` supersedes the URL-based `ImageResourceRef` for image fields where the bytes themselves are protocol-replicated rather than hosted on an external CDN. Used for vehicle avatar/banner photos in 0.2; the same shape extends to journey photo galleries and other shared-media use cases without protocol churn.
+
+| Field | JSON | Type | Required | Notes |
+| --- | --- | --- | --- | --- |
+| Hash | `hash` | string | yes | Canonical `sha256:<64-hex>` shape. Lower-case hex. |
+| Size | `size` | int64 | yes | Byte length of the blob payload. Clients use this for placeholders, range-fetch planning, and quota checks. Must be ≥ 0. |
+| ContentType | `content_type` | string | yes | IANA media type ("image/jpeg", "image/png"). Lower-cased on the wire. |
+
+A server endpoint mints these refs at upload time and stores the bytes; recipients of a `Vehicle` containing a `BlobRef` fetch the bytes from any OpenCaravan server known to host the hash. Hash-as-capability: knowledge of the hash is sufficient to fetch (within the server's authentication boundary). The server's blob storage layer is described in the implementation-specific reference documentation, not this protocol spec.
 
 ### `VehicleEmergencyRule`
 

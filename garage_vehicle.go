@@ -26,19 +26,23 @@ import (
 // owner may edit any vehicle in the garage. The server retains the full
 // revision history.
 type GarageVehicle struct {
-	ID              UUID              `json:"id"`
-	GarageID        UUID              `json:"garage_id"`
-	RevisionVersion int               `json:"revision_version"`
-	RevisionTime    time.Time         `json:"revision_time"`
-	DisplayName     string            `json:"display_name"`
-	Make            string            `json:"make,omitempty"`
-	Model           string            `json:"model,omitempty"`
-	ModelYear       int               `json:"model_year,omitempty"`
-	Color           string            `json:"color,omitempty"`
-	Capacity        int               `json:"capacity"`
-	AvatarImage     *ImageResourceRef `json:"avatar_image,omitempty"`
-	BannerImage     *ImageResourceRef `json:"banner_image,omitempty"`
-	Notes           string            `json:"notes,omitempty"`
+	ID              UUID      `json:"id"`
+	GarageID        UUID      `json:"garage_id"`
+	RevisionVersion int       `json:"revision_version"`
+	RevisionTime    time.Time `json:"revision_time"`
+	DisplayName     string    `json:"display_name"`
+	Make            string    `json:"make,omitempty"`
+	Model           string    `json:"model,omitempty"`
+	ModelYear       int       `json:"model_year,omitempty"`
+	Color           string    `json:"color,omitempty"`
+	Capacity        int       `json:"capacity"`
+	// AvatarBlob references the compact / map-tile photo via
+	// the protocol's content-addressed blob layer. See [BlobRef].
+	AvatarBlob *BlobRef `json:"avatar_blob,omitempty"`
+	// BannerBlob references the wide / detail-view photo via the
+	// content-addressed blob layer.
+	BannerBlob *BlobRef `json:"banner_blob,omitempty"`
+	Notes      string   `json:"notes,omitempty"`
 	// SignedBy names which current garage owner produced Integrity. The
 	// server cross-checks against the named garage's owner list at
 	// RevisionTime to confirm the signer was an accepted owner then.
@@ -70,14 +74,14 @@ func (gv GarageVehicle) Validate() error {
 	if gv.Capacity < 1 {
 		return errors.New("capacity must be at least 1")
 	}
-	if gv.AvatarImage != nil {
-		if err := gv.AvatarImage.Validate(); err != nil {
-			return fmt.Errorf("avatar_image: %w", err)
+	if gv.AvatarBlob != nil {
+		if err := gv.AvatarBlob.Validate(); err != nil {
+			return fmt.Errorf("avatar_blob: %w", err)
 		}
 	}
-	if gv.BannerImage != nil {
-		if err := gv.BannerImage.Validate(); err != nil {
-			return fmt.Errorf("banner_image: %w", err)
+	if gv.BannerBlob != nil {
+		if err := gv.BannerBlob.Validate(); err != nil {
+			return fmt.Errorf("banner_blob: %w", err)
 		}
 	}
 	if !gv.SignedBy.Valid() {
