@@ -30,16 +30,16 @@ func mustUUID(t *testing.T) opencaravan.UUID {
 func validVehicle(t *testing.T) opencaravan.Vehicle {
 	t.Helper()
 	return opencaravan.Vehicle{
-		ID:                mustUUID(t),
-		DisplayName:       "Riley's Subaru",
-		Make:              "Subaru",
-		Model:             "Outback",
-		ModelYear:         2018,
-		Color:             "silver",
-		OwnerUserID:       mustUUID(t),
-		Capacity:          5,
-		AuthorizedDrivers: []opencaravan.UUID{mustUUID(t)},
-		ACLVersion:        1,
+		ID:              mustUUID(t),
+		OwnerUserID:     mustUUID(t),
+		RevisionVersion: 1,
+		RevisionTime:    time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+		DisplayName:     "Riley's Subaru",
+		Make:            "Subaru",
+		Model:           "Outback",
+		ModelYear:       2018,
+		Color:           "silver",
+		Capacity:        5,
 	}
 }
 
@@ -77,18 +77,18 @@ func TestCanonicalJSONSortsKeysAndOmitsWhitespace(t *testing.T) {
 			t.Fatalf("canonical output contains insignificant whitespace %q in: %s", pattern, s)
 		}
 	}
-	// Verify lexicographic ordering: "acl_version" comes before "authorized_drivers",
-	// "authorized_drivers" before "capacity", "capacity" before "color", and so on.
-	// Confirm by checking a few representative pairs.
+	// Verify lexicographic ordering: a few representative pairs that exist
+	// in the post-bundle Vehicle shape (no ACL fields; metadata + revision).
 	for _, pair := range []struct{ before, after string }{
-		{`"acl_version"`, `"authorized_drivers"`},
-		{`"authorized_drivers"`, `"capacity"`},
 		{`"capacity"`, `"color"`},
+		{`"color"`, `"display_name"`},
 		{`"display_name"`, `"id"`},
 		{`"id"`, `"make"`},
 		{`"make"`, `"model"`},
 		{`"model"`, `"model_year"`},
 		{`"model_year"`, `"owner_user_id"`},
+		{`"owner_user_id"`, `"revision_time"`},
+		{`"revision_time"`, `"revision_version"`},
 	} {
 		b := strings.Index(s, pair.before)
 		a := strings.Index(s, pair.after)
@@ -102,16 +102,16 @@ func TestCanonicalJSONSortsKeysAndOmitsWhitespace(t *testing.T) {
 }
 
 func TestCanonicalJSONOmitsEmptyOptionalFields(t *testing.T) {
-	// A Vehicle without optional fields (avatar_image, banner_image,
-	// emergency_rule, integrity, make, model, etc.) should produce canonical
-	// JSON that does NOT contain those keys.
+	// A Vehicle without optional fields (avatar_blob, banner_blob,
+	// integrity, make, model, etc.) should produce canonical JSON that
+	// does NOT contain those keys.
 	v := opencaravan.Vehicle{
-		ID:                mustUUID(t),
-		DisplayName:       "Spare",
-		OwnerUserID:       mustUUID(t),
-		Capacity:          4,
-		AuthorizedDrivers: []opencaravan.UUID{mustUUID(t)},
-		ACLVersion:        1,
+		ID:              mustUUID(t),
+		OwnerUserID:     mustUUID(t),
+		RevisionVersion: 1,
+		RevisionTime:    time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+		DisplayName:     "Spare",
+		Capacity:        4,
 	}
 	got, err := opencaravan.CanonicalJSON(v)
 	if err != nil {
@@ -119,8 +119,8 @@ func TestCanonicalJSONOmitsEmptyOptionalFields(t *testing.T) {
 	}
 	s := string(got)
 	for _, omitted := range []string{
-		`"avatar_image"`, `"banner_image"`, `"make"`, `"model"`,
-		`"model_year"`, `"color"`, `"emergency_rule"`, `"integrity"`,
+		`"avatar_blob"`, `"banner_blob"`, `"make"`, `"model"`,
+		`"model_year"`, `"color"`, `"notes"`, `"integrity"`,
 	} {
 		if strings.Contains(s, omitted) {
 			t.Fatalf("expected %s to be omitted from canonical encoding; got: %s", omitted, s)
@@ -159,14 +159,17 @@ func TestVehicleValidate(t *testing.T) {
 	}
 
 	cases := map[string]func(*opencaravan.Vehicle){
-		"missing id":             func(v *opencaravan.Vehicle) { v.ID = "" },
-		"missing display_name":   func(v *opencaravan.Vehicle) { v.DisplayName = "" },
-		"missing owner_user_id":  func(v *opencaravan.Vehicle) { v.OwnerUserID = "" },
-		"zero capacity":          func(v *opencaravan.Vehicle) { v.Capacity = 0 },
-		"negative capacity":      func(v *opencaravan.Vehicle) { v.Capacity = -1 },
-		"zero acl_version":       func(v *opencaravan.Vehicle) { v.ACLVersion = 0 },
-		"bad authorized driver":  func(v *opencaravan.Vehicle) { v.AuthorizedDrivers = []opencaravan.UUID{"not-a-uuid"} },
-		"bad emergency rule":     func(v *opencaravan.Vehicle) { v.EmergencyRule = &opencaravan.VehicleEmergencyRule{Kind: "unknown"} },
+		"missing id":            func(v *opencaravan.Vehicle) { v.ID = "" },
+		"missing display_name":  func(v *opencaravan.Vehicle) { v.DisplayName = "" },
+		"missing owner_user_id": func(v *opencaravan.Vehicle) { v.OwnerUserID = "" },
+		"zero capacity":         func(v *opencaravan.Vehicle) { v.Capacity = 0 },
+		"negative capacity":     func(v *opencaravan.Vehicle) { v.Capacity = -1 },
+		"zero revision_version": func(v *opencaravan.Vehicle) { v.RevisionVersion = 0 },
+		"zero revision_time":    func(v *opencaravan.Vehicle) { v.RevisionTime = time.Time{} },
+		"bad avatar blob":       func(v *opencaravan.Vehicle) { v.AvatarBlob = &opencaravan.BlobRef{Hash: "bad"} },
+		"bad banner blob": func(v *opencaravan.Vehicle) {
+			v.BannerBlob = &opencaravan.BlobRef{Hash: "sha256:" + strings.Repeat("a", 64), ContentType: ""}
+		},
 		"bad integrity envelope": func(v *opencaravan.Vehicle) { v.Integrity = &opencaravan.Integrity{} },
 	}
 	for name, mut := range cases {
@@ -371,18 +374,22 @@ func TestVehicleSignVerifyRoundTrip(t *testing.T) {
 
 func TestVehicleJSONRoundTrip(t *testing.T) {
 	// Round-trip through JSON: a Vehicle marshal/unmarshal must be lossless
-	// for every field, including the new auth metadata.
+	// for every field, including blob refs and revision metadata.
 	v := validVehicle(t)
-	v.AvatarImage = &opencaravan.ImageResourceRef{
-		ID: mustUUID(t), Digest: "sha256:" + strings.Repeat("d", 64),
-		ContentType: "image/png", WidthPixels: 512, HeightPixels: 512,
+	v.AvatarBlob = &opencaravan.BlobRef{
+		Hash:        "sha256:" + strings.Repeat("d", 64),
+		Size:        204800,
+		ContentType: "image/png",
 	}
-	v.EmergencyRule = &opencaravan.VehicleEmergencyRule{
-		Kind: opencaravan.VehicleEmergencyRuleAnyJourneyParticipant,
+	v.BannerBlob = &opencaravan.BlobRef{
+		Hash:        "sha256:" + strings.Repeat("e", 64),
+		Size:        819200,
+		ContentType: "image/jpeg",
 	}
+	v.Notes = "Transmission rebuilt 2024-03."
 	v.Integrity = &opencaravan.Integrity{
 		Algorithm: "p256-ecdsa-sha256",
-		KeyID:     "sha256:" + strings.Repeat("e", 64),
+		KeyID:     "sha256:" + strings.Repeat("f", 64),
 		Signature: base64.RawURLEncoding.EncodeToString([]byte("sig")),
 	}
 	raw, err := json.Marshal(v)
@@ -393,10 +400,37 @@ func TestVehicleJSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.ID != v.ID || got.OwnerUserID != v.OwnerUserID ||
-		got.Capacity != v.Capacity || got.ACLVersion != v.ACLVersion ||
-		got.EmergencyRule == nil || got.EmergencyRule.Kind != v.EmergencyRule.Kind ||
-		got.Integrity == nil || got.Integrity.Algorithm != v.Integrity.Algorithm {
-		t.Fatalf("round-trip lossy:\n  want: %+v\n  got:  %+v", v, got)
+	// Verify every field round-trips losslessly. A subset check would let
+	// silent regressions slip through (e.g., a new tag breaking
+	// model_year serialization unnoticed).
+	checks := []struct {
+		name      string
+		wantEqual bool
+	}{
+		{"ID", got.ID == v.ID},
+		{"OwnerUserID", got.OwnerUserID == v.OwnerUserID},
+		{"RevisionVersion", got.RevisionVersion == v.RevisionVersion},
+		{"RevisionTime", got.RevisionTime.Equal(v.RevisionTime)},
+		{"DisplayName", got.DisplayName == v.DisplayName},
+		{"Make", got.Make == v.Make},
+		{"Model", got.Model == v.Model},
+		{"ModelYear", got.ModelYear == v.ModelYear},
+		{"Color", got.Color == v.Color},
+		{"Capacity", got.Capacity == v.Capacity},
+		{"Notes", got.Notes == v.Notes},
+		{"AvatarBlob.Hash", got.AvatarBlob != nil && got.AvatarBlob.Hash == v.AvatarBlob.Hash},
+		{"AvatarBlob.Size", got.AvatarBlob != nil && got.AvatarBlob.Size == v.AvatarBlob.Size},
+		{"AvatarBlob.ContentType", got.AvatarBlob != nil && got.AvatarBlob.ContentType == v.AvatarBlob.ContentType},
+		{"BannerBlob.Hash", got.BannerBlob != nil && got.BannerBlob.Hash == v.BannerBlob.Hash},
+		{"BannerBlob.Size", got.BannerBlob != nil && got.BannerBlob.Size == v.BannerBlob.Size},
+		{"BannerBlob.ContentType", got.BannerBlob != nil && got.BannerBlob.ContentType == v.BannerBlob.ContentType},
+		{"Integrity.Algorithm", got.Integrity != nil && got.Integrity.Algorithm == v.Integrity.Algorithm},
+		{"Integrity.KeyID", got.Integrity != nil && got.Integrity.KeyID == v.Integrity.KeyID},
+		{"Integrity.Signature", got.Integrity != nil && got.Integrity.Signature == v.Integrity.Signature},
+	}
+	for _, c := range checks {
+		if !c.wantEqual {
+			t.Errorf("field %s did not round-trip losslessly\n  want: %+v\n  got:  %+v", c.name, v, got)
+		}
 	}
 }

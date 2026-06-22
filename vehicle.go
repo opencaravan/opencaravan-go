@@ -6,82 +6,74 @@ import (
 	"time"
 )
 
-// Vehicle is the journey-scoped representation of a physical vehicle: who is
-// participating in this trip, what its photos and capacity are for the
-// purposes of this trip, and who may drive it during this trip. Persistent,
-// account-scoped identity for a vehicle (the household's library of cars)
-// lives on the separate [GarageVehicle] type; a client typically constructs
-// a journey Vehicle by copying display name, photos, make/model, and
-// capacity from a GarageVehicle the user has selected from their garage,
-// then signing the resulting Vehicle fresh for this journey.
+// Vehicle is the journey-scoped, owner-signed metadata bundle for
+// a physical vehicle taking part in a trip: who owns the record,
+// what the vehicle looks like, what photos to render, and the
+// monotonic revision counter the owner increments whenever any
+// of that metadata changes.
 //
-// The journey Vehicle is owner-signed: OwnerUserID names the journey
-// participant whose enrolled client cert produced Integrity, and the
-// signature covers the canonical encoding of every field except Integrity
-// itself. Verifiers reproduce the canonical bytes via CanonicalEncoding and
-// check the signature against the owner's enrolled cert.
+// Vehicle is intentionally opaque to the server. The protocol
+// keeps the vehicle's *descriptive* state — make/model/photos/
+// notes — in this signed bundle so any client that holds the
+// bundle has the full picture, while the *authorization* state
+// (who may drive in this journey, what the emergency fallback
+// is) lives on the separate [VehicleACL] type. That split lets
+// clients gossip a metadata change (a new photo, a corrected
+// model year) independently of an authorization change (adding a
+// driver), which matters in the offline-first model where each
+// kind of change has different timing and verification needs.
 //
-// Edit authority is at the user level rather than the client_app level: any
-// of the owner's enrolled client apps may produce a fresh Integrity over an
-// updated record, so a user with multiple devices is not locked into the
-// one that first uploaded.
+// The journey-scoped Vehicle is constructed by copying display
+// name, photos, make/model, and capacity from a [GarageVehicle]
+// the user has selected from their persistent garage, then
+// publishing it fresh for this journey. There is no wire-level
+// link from Vehicle back to its GarageVehicle source.
 //
-// AuthorizedDrivers on a journey Vehicle is per-journey and independent of
-// any garage-level co-ownership. The same household car may have different
-// driver permissions in different trips. Garage co-owners share authority
-// over editing the garage entry; per-journey driver permissions stay
-// per-journey.
+// Each Vehicle value is one revision in a monotonic chain.
+// RevisionVersion starts at 1 and is strictly increasing per ID.
+// Revisions are signed by the OwnerUserID's enrolled client cert
+// (any of the owner's enrolled apps may sign; edit authority is
+// user-scoped, not client-app-scoped). The server retains the
+// full revision history so a recipient can audit how a vehicle's
+// metadata evolved during the journey.
 type Vehicle struct {
-	ID          UUID   `json:"id"`
-	DisplayName string `json:"display_name"`
-	Make        string `json:"make,omitempty"`
-	Model       string `json:"model,omitempty"`
-	ModelYear   int    `json:"model_year,omitempty"`
-	Color       string `json:"color,omitempty"`
-	// AvatarImage is the image clients can use for compact or map
-	// representations of this vehicle.
-	AvatarImage *ImageResourceRef `json:"avatar_image,omitempty"`
-	// BannerImage is an optional wide image clients can use in richer vehicle
-	// views.
-	BannerImage *ImageResourceRef `json:"banner_image,omitempty"`
-	// OwnerUserID is the user whose enrolled client cert produced Integrity.
-	// Permission to edit the record or update the authorized-drivers ACL is
-	// scoped to this user, not to a specific client_app.
+	ID UUID `json:"id"`
+	// OwnerUserID is the user whose enrolled client cert produced
+	// Integrity. Permission to publish a new revision is scoped to
+	// this user, not to a specific client_app.
 	OwnerUserID UUID `json:"owner_user_id"`
-	// Capacity is the total number of possible occupants the vehicle can
-	// carry, including the driver. A sedan is 5; a seven-seat minivan with
-	// six seatbelts is 6.
+	// RevisionVersion is the monotonic counter for this vehicle's
+	// metadata bundle. Starts at 1, strictly increases per ID.
+	// Independent of [VehicleACL.ACLVersion] — metadata and
+	// authorization version separately.
+	RevisionVersion int `json:"revision_version"`
+	// RevisionTime is when the owner signed this revision. Used by
+	// recipients to render "last updated" and to break ties when
+	// two revisions arrive concurrently.
+	RevisionTime time.Time `json:"revision_time"`
+	DisplayName  string    `json:"display_name"`
+	Make         string    `json:"make,omitempty"`
+	Model        string    `json:"model,omitempty"`
+	ModelYear    int       `json:"model_year,omitempty"`
+	Color        string    `json:"color,omitempty"`
+	// Capacity is the total number of possible occupants the
+	// vehicle can carry, including the driver. A sedan is 5; a
+	// seven-seat minivan with six seatbelts is 6.
 	Capacity int `json:"capacity"`
-	// AuthorizedDrivers names the users the owner has authorized to drive
-	// this vehicle within the current journey. DriverAttestation values
-	// validate against this list at the ACL version they recorded; see
-	// VehicleACL for the version-evolution shape.
-	AuthorizedDrivers []UUID `json:"authorized_drivers"`
-	// ACLVersion is a monotonic counter incremented whenever
-	// AuthorizedDrivers or EmergencyRule changes. Driver attestations
-	// record the version they consulted so a later ACL revision does not
-	// retroactively invalidate prior attestations.
-	ACLVersion int `json:"acl_version"`
-	// EmergencyRule is the owner-published fallback policy for when no
-	// one in AuthorizedDrivers is available to drive. The behavior is
-	// driven by Kind, not by presence:
-	//
-	//   - nil OR Kind == VehicleEmergencyRuleNone: no fallback. A
-	//     non-ACL driver attestation is recorded as an ACL violation.
-	//   - Kind == VehicleEmergencyRuleAnyJourneyParticipant: any
-	//     journey participant may drive in an emergency. A non-ACL
-	//     attestation by a journey participant is recorded with a
-	//     downgraded trust flag rather than rejected.
-	//
-	// Treating nil and "none" equivalently lets an owner publish an
-	// explicit "I considered the fallback question and chose no
-	// policy" signal distinct from "I haven't thought about it yet,"
-	// but the protocol's evaluation collapses both to the same
-	// outcome. Loss of trust is information, never data loss.
-	EmergencyRule *VehicleEmergencyRule `json:"emergency_rule,omitempty"`
-	// Integrity is the owner's signature over CanonicalEncoding(). Optional
-	// on a draft Vehicle that has not yet been signed; required on the
-	// wire (the server rejects unsigned vehicle uploads).
+	// AvatarBlob references the compact / map-tile photo for this
+	// vehicle, content-addressed via [BlobRef]. The bytes are
+	// uploaded to the server's blob layer; multiple Vehicle
+	// revisions referencing the same photo deduplicate by hash.
+	AvatarBlob *BlobRef `json:"avatar_blob,omitempty"`
+	// BannerBlob references the wide / detail-view photo, same
+	// content-addressed model as AvatarBlob.
+	BannerBlob *BlobRef `json:"banner_blob,omitempty"`
+	// Notes is owner-authored free text. Surface in client UIs as
+	// "owner notes" or similar.
+	Notes string `json:"notes,omitempty"`
+	// Integrity is the owner's signature over CanonicalEncoding().
+	// Optional on a draft Vehicle that has not yet been signed;
+	// required on the wire — the server rejects unsigned uploads.
 	Integrity *Integrity `json:"integrity,omitempty"`
 }
 
@@ -174,45 +166,39 @@ type VehicleOccupant struct {
 	LeaveTime            *time.Time   `json:"leave_time,omitempty"`
 }
 
-// Validate reports whether vehicle contains required identity, ownership,
-// authorization, and signed-envelope shape, plus valid optional image
-// resources. Structural only — signature cryptographic verification is the
-// consumer's responsibility once the canonical bytes are reproduced via
+// Validate reports whether vehicle contains required identity,
+// ownership, revision-bearing fields, capacity, and signed-envelope
+// shape, plus valid optional blob references. Structural only —
+// cryptographic verification of Integrity is the consumer's
+// responsibility once canonical bytes are reproduced via
 // CanonicalEncoding.
 func (vehicle Vehicle) Validate() error {
 	if !vehicle.ID.Valid() {
 		return errors.New("vehicle id must be a valid UUID")
 	}
-	if vehicle.DisplayName == "" {
-		return errors.New("display_name must be set")
-	}
-	if vehicle.AvatarImage != nil {
-		if err := vehicle.AvatarImage.Validate(); err != nil {
-			return fmt.Errorf("avatar_image: %w", err)
-		}
-	}
-	if vehicle.BannerImage != nil {
-		if err := vehicle.BannerImage.Validate(); err != nil {
-			return fmt.Errorf("banner_image: %w", err)
-		}
-	}
 	if !vehicle.OwnerUserID.Valid() {
 		return errors.New("owner_user_id must be a valid UUID")
+	}
+	if vehicle.RevisionVersion < 1 {
+		return errors.New("revision_version must be at least 1")
+	}
+	if vehicle.RevisionTime.IsZero() {
+		return errors.New("revision_time must be set")
+	}
+	if vehicle.DisplayName == "" {
+		return errors.New("display_name must be set")
 	}
 	if vehicle.Capacity < 1 {
 		return errors.New("capacity must be at least 1")
 	}
-	for i, driver := range vehicle.AuthorizedDrivers {
-		if !driver.Valid() {
-			return fmt.Errorf("authorized_drivers[%d] must be a valid UUID", i)
+	if vehicle.AvatarBlob != nil {
+		if err := vehicle.AvatarBlob.Validate(); err != nil {
+			return fmt.Errorf("avatar_blob: %w", err)
 		}
 	}
-	if vehicle.ACLVersion < 1 {
-		return errors.New("acl_version must be at least 1")
-	}
-	if vehicle.EmergencyRule != nil {
-		if err := vehicle.EmergencyRule.Validate(); err != nil {
-			return fmt.Errorf("emergency_rule: %w", err)
+	if vehicle.BannerBlob != nil {
+		if err := vehicle.BannerBlob.Validate(); err != nil {
+			return fmt.Errorf("banner_blob: %w", err)
 		}
 	}
 	if vehicle.Integrity != nil {

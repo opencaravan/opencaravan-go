@@ -435,8 +435,10 @@ func TestVehicleValidate(t *testing.T) {
 	}{
 		{name: "missing vehicle id", mutate: func(vehicle *Vehicle) { vehicle.ID = "" }},
 		{name: "missing display name", mutate: func(vehicle *Vehicle) { vehicle.DisplayName = "" }},
-		{name: "invalid avatar image", mutate: func(vehicle *Vehicle) { vehicle.AvatarImage.Digest = "" }},
-		{name: "invalid banner image", mutate: func(vehicle *Vehicle) { vehicle.BannerImage.ContentType = "application/json" }},
+		{name: "missing revision version", mutate: func(vehicle *Vehicle) { vehicle.RevisionVersion = 0 }},
+		{name: "missing revision time", mutate: func(vehicle *Vehicle) { vehicle.RevisionTime = time.Time{} }},
+		{name: "invalid avatar blob hash", mutate: func(vehicle *Vehicle) { vehicle.AvatarBlob.Hash = "not-a-hash" }},
+		{name: "invalid banner blob content type", mutate: func(vehicle *Vehicle) { vehicle.BannerBlob.ContentType = "" }},
 	}
 
 	for _, tt := range tests {
@@ -877,18 +879,34 @@ func validUser() User {
 
 func validVehicle() Vehicle {
 	return Vehicle{
-		ID:                testVehicleID,
-		DisplayName:       "Blue Bronco",
-		Make:              "Ford",
-		Model:             "Bronco",
-		ModelYear:         2026,
-		Color:             "blue",
-		AvatarImage:       ptr(validVehicleAvatarImageRef()),
-		BannerImage:       ptr(validBannerImageRef()),
-		OwnerUserID:       testUserID,
-		Capacity:          5,
-		AuthorizedDrivers: []UUID{testUserID},
-		ACLVersion:        1,
+		ID:              testVehicleID,
+		OwnerUserID:     testUserID,
+		RevisionVersion: 1,
+		RevisionTime:    time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC),
+		DisplayName:     "Blue Bronco",
+		Make:            "Ford",
+		Model:           "Bronco",
+		ModelYear:       2026,
+		Color:           "blue",
+		Capacity:        5,
+		AvatarBlob:      ptr(validAvatarBlobRef()),
+		BannerBlob:      ptr(validBannerBlobRef()),
+	}
+}
+
+func validAvatarBlobRef() BlobRef {
+	return BlobRef{
+		Hash:        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		Size:        102400,
+		ContentType: "image/png",
+	}
+}
+
+func validBannerBlobRef() BlobRef {
+	return BlobRef{
+		Hash:        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Size:        512000,
+		ContentType: "image/jpeg",
 	}
 }
 
